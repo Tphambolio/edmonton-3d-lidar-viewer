@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edmonton 3D Tree & Building Viewer</title>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="cesiumContainer"></div>
+
+    <!-- Search Panel -->
+    <div id="searchPanel">
+        <h2>Edmonton 3D Viewer</h2>
+        <div class="search-box">
+            <input type="text" id="addressInput" placeholder="Enter Edmonton address..."
+                   value="Hawrelak Park Edmonton">
+            <button id="searchBtn">Search</button>
+        </div>
+        <div id="searchStatus"></div>
+
+        <div class="controls">
+            <label>
+                <input type="checkbox" id="showBuildings" checked> Buildings
+            </label>
+            <label>
+                <input type="checkbox" id="showTrees" checked> Trees
+            </label>
+            <label>
+                <input type="checkbox" id="showSatellite"> Satellite
+            </label>
+            <label>
+                Radius: <input type="range" id="radiusSlider" min="100" max="500" value="200" step="50">
+                <span id="radiusLabel">200m</span>
+            </label>
+            <label>
+                Tree height: <input type="range" id="treeOffsetSlider" min="-100" max="100" value="0" step="2">
+                <span id="treeOffsetLabel">0m</span>
+            </label>
+        </div>
+
+        <div class="upload-section">
+            <h3>Upload Custom Building</h3>
+            <p class="hint">Click a building first, then upload a .glb model to replace it.</p>
+            <input type="file" id="modelUpload" accept=".glb,.gltf" disabled>
+            <div id="selectedBuilding">No building selected</div>
+        </div>
+
+        <div class="stats" id="stats"></div>
+    </div>
+
+    <!-- Info Box -->
+    <div id="infoBox" class="hidden">
+        <button id="closeInfo">&times;</button>
+        <div id="infoContent"></div>
+    </div>
+
+    <script src="js/geocoder.js"></script>
+    <script src="js/buildings.js"></script>
+    <script src="js/trees.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

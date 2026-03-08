@@ -1,0 +1,16 @@
+# LiDAR source data (~74GB)
+*.laz
+*.las
+
+# Generated mesh files
+*.glb
+*.dae
+dae_export/
+
+# Cached building tiles (fetched from SODA API at runtime)
+edmonton-3d-viewer/data/building_tiles/
+
+# OS/editor
+.DS_Store
+*.swp
+*~

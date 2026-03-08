@@ -1,0 +1,18 @@
+{
+  "tiles": {
+    "010_040": {
+      "file": "010_040_trees.glb",
+      "center_lat": 53.521796,
+      "center_lng": -113.636226,
+      "size_mb": 44.5,
+      "z_base_offset": 3.89
+    },
+    "023_042": {
+      "file": "023_042_trees.glb",
+      "center_lat": 53.53065,
+      "center_lng": -113.535764,
+      "size_mb": 187.3,
+      "z_base_offset": 24.92
+    }
+  }
+}
