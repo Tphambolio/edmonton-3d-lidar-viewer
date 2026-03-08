@@ -7,12 +7,39 @@
       "size_mb": 44.5,
       "z_base_offset": 3.89
     },
+    "015_045": {
+      "file": "015_045_trees.glb",
+      "center_lat": 53.544676,
+      "center_lng": -113.597405,
+      "size_mb": 8.5,
+      "z_base_offset": 0.95,
+      "num_faces": 447472,
+      "num_trees": 50
+    },
+    "020_048": {
+      "file": "020_048_trees.glb",
+      "center_lat": 53.558342,
+      "center_lng": -113.55864,
+      "size_mb": 20.3,
+      "z_base_offset": 1.18,
+      "num_faces": 1066258,
+      "num_trees": 50
+    },
     "023_042": {
       "file": "023_042_trees.glb",
       "center_lat": 53.53065,
       "center_lng": -113.535764,
       "size_mb": 187.3,
       "z_base_offset": 24.92
+    },
+    "030_045": {
+      "file": "030_045_trees.glb",
+      "center_lat": 53.54423,
+      "center_lng": -113.481542,
+      "size_mb": 2.3,
+      "z_base_offset": 4.76,
+      "num_faces": 118646,
+      "num_trees": 50
     }
   }
 }
