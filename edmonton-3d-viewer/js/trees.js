@@ -29,7 +29,21 @@ const Trees = {
 
     getTilesForLocation(lat, lng, radiusM) {
         if (!this.tileIndex) return [];
-        return Object.keys(this.tileIndex.tiles);
+        // Filter tiles by distance from search location
+        // Each tile covers ~512m, load generously since GLBs are pre-built
+        // Use at least 1000m to ensure good coverage around the search point
+        const maxDistM = Math.max(radiusM + 512, 1000);
+        const matching = [];
+        for (const [name, info] of Object.entries(this.tileIndex.tiles)) {
+            const dLat = (info.center_lat - lat) * 111000;
+            const dLng = (info.center_lng - lng) * 111000 * Math.cos(lat * Math.PI / 180);
+            const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+            if (dist < maxDistM) {
+                matching.push(name);
+            }
+        }
+        console.log(`Tiles within ${maxDistM.toFixed(0)}m: ${matching.length} of ${Object.keys(this.tileIndex.tiles).length}`);
+        return matching;
     },
 
     /**
