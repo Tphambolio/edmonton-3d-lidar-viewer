@@ -236,13 +236,20 @@ def extract_trees(x, y, z, cls, r, g, b, cx, cy, z_base, dem, gxi, gyi, xmin, ym
 def write_glb(filepath, verts, faces, colors):
     """Write a GLB file directly from mesh data.
 
-    Produces a Y-up GLB (glTF standard):
-    - DAE/LiDAR X (east) → GLB X
-    - DAE/LiDAR Z (height) → GLB Y (up)
-    - DAE/LiDAR Y (north) → GLB Z
+    Produces a Y-up GLB (glTF standard).
+
+    Input mesh is Z-up: (east, north, height).
+    glTF is Y-up, and CesiumJS applies an internal Y→Z rotation
+    that maps (x, y, z) → (x, -z, y). To compensate, we negate
+    the north axis so CesiumJS's rotation restores it:
+    GLB (east, height, -north) → CesiumJS (east, north, height) ✓
     """
-    # Swap axes: Z-up (x,y,z) → Y-up (x,z,y)
-    verts_yup = verts[:, [0, 2, 1]].astype(np.float32)
+    # Swap axes: Z-up (east,north,height) → Y-up (east,height,-north)
+    verts_yup = np.column_stack([
+        verts[:, 0],    # X = east (unchanged)
+        verts[:, 2],    # Y = height (was Z)
+        -verts[:, 1],   # Z = -north (negated to compensate CesiumJS rotation)
+    ]).astype(np.float32)
 
     # Face indices as uint32
     faces_flat = faces.astype(np.uint32).flatten()

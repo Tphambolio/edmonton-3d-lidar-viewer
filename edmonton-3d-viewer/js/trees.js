@@ -10,7 +10,7 @@ const Trees = {
     tileIndex: null,
     loadedTiles: new Set(),
     tilesets: [],
-    heightOffset: 0, // meters, adjustable for fine-tuning
+    heightOffset: -6, // meters — compensates for canopy start height + terrain model gap
 
     TILE_SIZE_M: 512,
 
@@ -116,9 +116,9 @@ const Trees = {
                             // Boost contrast and saturation without blowing out
                             c = pow(c, vec3(0.6));
                             // Push toward natural green tones
-                            c.r *= 0.7;
-                            c.g *= 1.1;
-                            c.b *= 0.6;
+                            c.r *= 0.5;
+                            c.g *= 0.95;
+                            c.b *= 0.4;
                             material.diffuse = clamp(c, 0.0, 1.0);
                         }
                     `
