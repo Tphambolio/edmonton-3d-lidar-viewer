@@ -29,9 +29,8 @@ const Trees = {
 
     getTilesForLocation(lat, lng, radiusM) {
         if (!this.tileIndex) return [];
-        // Filter tiles by distance from search location, sorted nearest-first
-        // Each tile covers ~512m, load generously since GLBs are pre-built
-        const maxDistM = Math.max(radiusM + 512, 1000);
+        // Filter tiles by distance — use search radius + one tile width for overlap
+        const maxDistM = radiusM + 512;
         const matching = [];
         for (const [name, info] of Object.entries(this.tileIndex.tiles)) {
             const dLat = (info.center_lat - lat) * 111000;
@@ -47,110 +46,121 @@ const Trees = {
     },
 
     /**
-     * Sample terrain heights across a tile and return {center, min}.
-     * Samples center + 4 edge midpoints to capture terrain variation.
+     * Batch-sample terrain heights for multiple tiles in one Cesium call.
+     * Returns a Map of tileName → { center, min }.
      */
-    async getTerrainHeights(viewer, lat, lng) {
-        // ~256m offset in degrees (half a 512m tile)
-        const dLat = 256 / 111000;
-        const dLng = 256 / (111000 * Math.cos(lat * Math.PI / 180));
-        const positions = [
-            Cesium.Cartographic.fromDegrees(lng, lat),           // center
-            Cesium.Cartographic.fromDegrees(lng, lat + dLat),    // N
-            Cesium.Cartographic.fromDegrees(lng, lat - dLat),    // S
-            Cesium.Cartographic.fromDegrees(lng - dLng, lat),    // W
-            Cesium.Cartographic.fromDegrees(lng + dLng, lat),    // E
-        ];
+    async _batchTerrainSample(viewer, tileNames) {
+        const results = new Map();
+        const positions = [];
+        const tileMap = []; // tracks which positions belong to which tile
+
+        for (const name of tileNames) {
+            const info = this.tileIndex.tiles[name];
+            if (!info) continue;
+            const lat = info.center_lat, lng = info.center_lng;
+            const dLat = 256 / 111000;
+            const dLng = 256 / (111000 * Math.cos(lat * Math.PI / 180));
+            const startIdx = positions.length;
+            positions.push(
+                Cesium.Cartographic.fromDegrees(lng, lat),
+                Cesium.Cartographic.fromDegrees(lng, lat + dLat),
+                Cesium.Cartographic.fromDegrees(lng, lat - dLat),
+                Cesium.Cartographic.fromDegrees(lng - dLng, lat),
+                Cesium.Cartographic.fromDegrees(lng + dLng, lat)
+            );
+            tileMap.push({ name, startIdx });
+        }
+
+        if (positions.length === 0) return results;
+
         try {
             const terrain = viewer.terrainProvider;
-            if (terrain.ready === false) {
-                await terrain.readyPromise;
-            }
+            if (terrain.ready === false) await terrain.readyPromise;
             const updated = await Cesium.sampleTerrainMostDetailed(terrain, positions);
-            const heights = updated.map(p => p.height || 0);
-            return {
-                center: heights[0],
-                min: Math.min(...heights)
-            };
+            for (const { name, startIdx } of tileMap) {
+                const heights = [];
+                for (let i = startIdx; i < startIdx + 5; i++) {
+                    heights.push(updated[i].height || 0);
+                }
+                results.set(name, { center: heights[0], min: Math.min(...heights) });
+            }
         } catch (e) {
-            console.warn('Terrain sampling failed, using 0:', e);
-            return { center: 0, min: 0 };
+            console.warn('Batch terrain sampling failed:', e);
+            for (const name of tileNames) {
+                results.set(name, { center: 0, min: 0 });
+            }
         }
-    },
 
-    /**
-     * Load a single tree tileset, position it, and add to scene.
-     * Returns true on success, false on failure.
-     */
-    async _loadTile(viewer, tileName) {
-        if (this.loadedTiles.has(tileName)) return false;
-        const tileInfo = this.tileIndex.tiles[tileName];
-        if (!tileInfo) return false;
-
-        try {
-            const tilesetUrl = this.TILE_BASE + tileName + '_tileset.json';
-            const tileset = await Cesium.Cesium3DTileset.fromUrl(tilesetUrl, {
-                maximumScreenSpaceError: 16,
-                dynamicScreenSpaceError: false
-            });
-
-            // Sample terrain across the tile to find minimum elevation
-            const terrain = await this.getTerrainHeights(
-                viewer, tileInfo.center_lat, tileInfo.center_lng
-            );
-            console.log(`Terrain at ${tileName}: center=${terrain.center.toFixed(1)}m, min=${terrain.min.toFixed(1)}m`);
-
-            // Position mesh origin (Y=0 = z_base) at the lowest terrain point
-            tileset.root.transform = Cesium.Matrix4.IDENTITY;
-            const center = Cesium.Cartesian3.fromDegrees(
-                tileInfo.center_lng, tileInfo.center_lat,
-                terrain.min + this.heightOffset
-            );
-            tileset.modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(center);
-
-            tileInfo._terrainMin = terrain.min;
-            tileInfo._terrainCenter = terrain.center;
-
-            tileset.customShader = new Cesium.CustomShader({
-                fragmentShaderText: `
-                    void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {
-                        // Pass through vertex colors with no modification
-                    }
-                `
-            });
-
-            viewer.scene.primitives.add(tileset);
-            this.tilesets.push(tileset);
-            this.loadedTiles.add(tileName);
-            console.log(`Loaded tree tileset: ${tileName}`);
-            return true;
-        } catch (e) {
-            console.warn(`Failed to load tree tileset ${tileName}:`, e);
-            return false;
-        }
+        return results;
     },
 
     /**
      * Load tree 3D Tilesets near a location.
-     * Loads the nearest 2 tiles first (blocking), then the rest in parallel.
+     * Loads nearest 2 tiles first, then the rest in parallel.
      */
     async loadAround(viewer, lat, lng, radiusM) {
         if (!this.tileIndex) await this.loadIndex();
 
         const tileNames = this.getTilesForLocation(lat, lng, radiusM);
         const toLoad = tileNames.filter(n => !this.loadedTiles.has(n));
+        if (toLoad.length === 0) return 0;
+
+        // Batch all terrain sampling in one call (fast)
+        const terrainMap = await this._batchTerrainSample(viewer, toLoad);
+
+        // Helper to load + position a single tile (no terrain call needed)
+        const loadOne = async (tileName) => {
+            if (this.loadedTiles.has(tileName)) return false;
+            const tileInfo = this.tileIndex.tiles[tileName];
+            if (!tileInfo) return false;
+            const terrain = terrainMap.get(tileName) || { center: 0, min: 0 };
+
+            try {
+                const tilesetUrl = this.TILE_BASE + tileName + '_tileset.json';
+                const tileset = await Cesium.Cesium3DTileset.fromUrl(tilesetUrl, {
+                    maximumScreenSpaceError: 16,
+                    dynamicScreenSpaceError: false
+                });
+
+                tileset.root.transform = Cesium.Matrix4.IDENTITY;
+                const center = Cesium.Cartesian3.fromDegrees(
+                    tileInfo.center_lng, tileInfo.center_lat,
+                    terrain.min + this.heightOffset
+                );
+                tileset.modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(center);
+                tileInfo._terrainMin = terrain.min;
+                tileInfo._terrainCenter = terrain.center;
+
+                tileset.customShader = new Cesium.CustomShader({
+                    fragmentShaderText: `
+                        void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {
+                        }
+                    `
+                });
+
+                viewer.scene.primitives.add(tileset);
+                this.tilesets.push(tileset);
+                this.loadedTiles.add(tileName);
+                console.log(`Loaded tree tileset: ${tileName}`);
+                return true;
+            } catch (e) {
+                console.warn(`Failed to load tree tileset ${tileName}:`, e);
+                return false;
+            }
+        };
+
         let count = 0;
 
-        // Load nearest 2 tiles immediately (these cover the searched address)
+        // Load nearest 2 tiles immediately
         const priority = toLoad.slice(0, 2);
         for (const tileName of priority) {
-            if (await this._loadTile(viewer, tileName)) count++;
+            if (await loadOne(tileName)) count++;
         }
 
-        // Load remaining tiles in parallel (non-blocking)
+        // Load remaining tiles in parallel
         const rest = toLoad.slice(2);
         if (rest.length > 0) {
-            Promise.all(rest.map(n => this._loadTile(viewer, n))).then(results => {
+            Promise.all(rest.map(n => loadOne(n))).then(results => {
                 const extra = results.filter(Boolean).length;
                 if (extra > 0) console.log(`Background: loaded ${extra} more tree tilesets`);
             });
@@ -161,7 +171,6 @@ const Trees = {
 
     setHeightOffset(offset) {
         this.heightOffset = offset;
-        // Re-position all loaded tilesets at the new height, relative to terrain
         if (!this.tileIndex) return;
         this.tilesets.forEach((ts, i) => {
             const tileName = [...this.loadedTiles][i];
