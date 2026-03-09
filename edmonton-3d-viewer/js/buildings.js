@@ -221,7 +221,7 @@ const Buildings = {
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist > maxDist) {
                 maxDist = dist;
-                heading = Math.atan2(dx, dy);
+                heading = Math.atan2(dx, dy) + Math.PI / 2;
             }
         }
 
