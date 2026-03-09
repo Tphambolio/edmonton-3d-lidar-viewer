@@ -213,16 +213,38 @@ const Buildings = {
         const centLat = sumLat / positions.length;
         const centLng = sumLng / positions.length;
 
-        // Find heading from longest polygon edge
-        let maxDist = 0, heading = 0;
+        // Find heading via minimum-area oriented bounding box.
+        // This correctly handles lots facing any direction (streets, avenues, diagonal).
+        let bestAngle = 0, bestArea = Infinity, bestW = 0, bestH = 0;
+        const cosLat = Math.cos(centLat * Math.PI / 180);
         for (let i = 0; i < cartos.length - 1; i++) {
-            const dx = (cartos[i + 1].lng - cartos[i].lng) * Math.cos(centLat * Math.PI / 180);
-            const dy = cartos[i + 1].lat - cartos[i].lat;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist > maxDist) {
-                maxDist = dist;
-                heading = Math.atan2(dx, dy);
+            const edx = (cartos[i + 1].lng - cartos[i].lng) * cosLat;
+            const edy = cartos[i + 1].lat - cartos[i].lat;
+            const angle = Math.atan2(edx, edy);
+            const cosA = Math.cos(-angle), sinA = Math.sin(-angle);
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            for (const c of cartos) {
+                const px = (c.lng - centLng) * cosLat;
+                const py = c.lat - centLat;
+                const rx = px * cosA - py * sinA;
+                const ry = px * sinA + py * cosA;
+                if (rx < minX) minX = rx; if (rx > maxX) maxX = rx;
+                if (ry < minY) minY = ry; if (ry > maxY) maxY = ry;
             }
+            const w = maxX - minX;  // extent perpendicular to edge
+            const h = maxY - minY;  // extent along edge direction
+            const area = w * h;
+            if (area < bestArea) {
+                bestArea = area;
+                bestAngle = angle;
+                bestW = w;
+                bestH = h;
+            }
+        }
+        // Align model depth with the polygon's long axis
+        let heading = bestAngle;
+        if (bestW > bestH) {
+            heading += Math.PI / 2;
         }
 
         entity.show = false;
