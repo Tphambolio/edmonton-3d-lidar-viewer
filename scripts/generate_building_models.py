@@ -65,7 +65,7 @@ def generate_8plex(output_path):
     overhang_c = [140, 130, 115, 255]   # entrance overhang
     parapet_c = [120, 115, 105, 255]    # roof parapet
 
-    W, D, H = 14.0, 18.0, 12.0  # width (X), depth (Y), height (Z)
+    W, D, H = 14.0, 24.0, 12.0  # width (X), depth (Y), height (Z)
 
     # Main body
     T = trimesh.transformations.translation_matrix([0, 0, H / 2])
@@ -126,8 +126,8 @@ def generate_skinny_houses(output_path):
     step_c = [160, 155, 145, 255]    # concrete porch step
     door_c = [80, 60, 45, 255]       # door
 
-    house_w = 5.5   # width (X)
-    house_d = 14.0  # depth (Y)
+    house_w = 5.5   # width (X) — each skinny house
+    house_d = 25.0  # depth (Y) — typical Edmonton lot depth minus setbacks
     wall_h = 7.0    # wall height (Z)
     gable_h = 2.0   # gable peak above walls
     gap = 1.2       # between houses (0.6m setback each side)
@@ -201,7 +201,7 @@ def generate_apartment(output_path):
     dark = [58, 58, 68, 255]         # windows
     pent_c = [100, 100, 110, 255]    # mechanical penthouse
 
-    W, D, H = 20.0, 25.0, 18.0  # 6 storeys at 3m each
+    W, D, H = 20.0, 30.0, 18.0  # 6 storeys at 3m each
     storey_h = 3.0
 
     # Main body
