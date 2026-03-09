@@ -110,6 +110,8 @@ def generate_8plex(output_path):
                 parts.append(colored_box([0.15, 1.2, 1.6], transform=T, color=dark))
 
     mesh = trimesh.util.concatenate(parts)
+    # Convert Z-up (trimesh) to Y-up (glTF spec) — rotate -90° around X axis
+    mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
     mesh.export(output_path, file_type='glb')
     print(f"  8-Plex: {os.path.getsize(output_path) / 1024:.1f} KB  ({len(mesh.vertices)} verts, {len(mesh.faces)} faces)")
 
@@ -189,6 +191,8 @@ def generate_skinny_houses(output_path):
                     parts.append(colored_box([0.15, 0.9, 1.2], transform=T, color=dark))
 
     mesh = trimesh.util.concatenate(parts)
+    # Convert Z-up (trimesh) to Y-up (glTF spec) — rotate -90° around X axis
+    mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
     mesh.export(output_path, file_type='glb')
     print(f"  Skinny Houses: {os.path.getsize(output_path) / 1024:.1f} KB  ({len(mesh.vertices)} verts, {len(mesh.faces)} faces)")
 
@@ -239,6 +243,8 @@ def generate_apartment(output_path):
                 parts.append(colored_box([0.15, 1.4, 1.8], transform=T, color=dark))
 
     mesh = trimesh.util.concatenate(parts)
+    # Convert Z-up (trimesh) to Y-up (glTF spec) — rotate -90° around X axis
+    mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
     mesh.export(output_path, file_type='glb')
     print(f"  Apartment: {os.path.getsize(output_path) / 1024:.1f} KB  ({len(mesh.vertices)} verts, {len(mesh.faces)} faces)")
 
