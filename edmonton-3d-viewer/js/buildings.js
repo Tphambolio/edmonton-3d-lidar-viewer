@@ -13,11 +13,11 @@ const Buildings = {
     // Pre-built model catalog (served from Cloudflare R2)
     MODEL_CATALOG: [
         { id: '8plex', name: '8-Plex Residential', description: '14m × 18m, 3 storeys (s-RML)',
-          url: 'https://pub-e37d9167d0644b6fb71d37ada161e611.r2.dev/models/8plex.glb', scale: 1.0 },
+          url: 'https://pub-e37d9167d0644b6fb71d37ada161e611.r2.dev/models/8plex.glb', scale: 2.0 },
         { id: 'skinny_houses', name: '2 Skinny Houses', description: '2 × 5.5m infill on standard lot',
-          url: 'https://pub-e37d9167d0644b6fb71d37ada161e611.r2.dev/models/skinny_houses.glb', scale: 1.0 },
+          url: 'https://pub-e37d9167d0644b6fb71d37ada161e611.r2.dev/models/skinny_houses.glb', scale: 2.0 },
         { id: 'apartment', name: 'Apartment (6-storey)', description: '20m × 25m, 6 storeys',
-          url: 'https://pub-e37d9167d0644b6fb71d37ada161e611.r2.dev/models/apartment.glb', scale: 1.0 },
+          url: 'https://pub-e37d9167d0644b6fb71d37ada161e611.r2.dev/models/apartment.glb', scale: 2.0 },
     ],
 
     entities: [],
