@@ -23,6 +23,7 @@ const Buildings = {
     entities: [],
     selectedEntity: null,
     customModels: {},
+    modelHeadings: {},
 
     async loadIndex() {
         // No pre-built index needed — SODA API handles spatial queries directly
@@ -269,6 +270,7 @@ const Buildings = {
         });
 
         this.customModels[bldgId] = modelEntity;
+        this.modelHeadings[bldgId] = heading;
         return modelEntity;
     },
 
@@ -279,19 +281,10 @@ const Buildings = {
         const modelEntity = this.customModels[bldgId];
         if (!modelEntity) return;
 
+        // Increment stored heading by 90° and recompute orientation from scratch
+        this.modelHeadings[bldgId] = (this.modelHeadings[bldgId] || 0) + Cesium.Math.PI_OVER_TWO;
         const pos = modelEntity.position.getValue(Cesium.JulianDate.now());
-        const oldOrientation = modelEntity.orientation.getValue(Cesium.JulianDate.now());
-
-        // Create a 90° rotation quaternion around the local up axis
-        const rotate90 = Cesium.Quaternion.fromAxisAngle(
-            Cesium.Cartesian3.UNIT_Z, -Cesium.Math.PI_OVER_TWO
-        );
-
-        // Convert to local frame, apply rotation, convert back
-        const hpr = Cesium.HeadingPitchRoll.fromQuaternion(oldOrientation);
-        hpr.heading += Cesium.Math.PI_OVER_TWO;
-        const newOrientation = Cesium.Transforms.headingPitchRollQuaternion(pos, hpr);
-
-        modelEntity.orientation = newOrientation;
+        const hpr = new Cesium.HeadingPitchRoll(this.modelHeadings[bldgId], 0, 0);
+        modelEntity.orientation = Cesium.Transforms.headingPitchRollQuaternion(pos, hpr);
     }
 };
