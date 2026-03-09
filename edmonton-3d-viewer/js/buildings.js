@@ -27,6 +27,19 @@ const Buildings = {
     },
 
     /**
+     * Sample terrain height at a location.
+     */
+    async getTerrainHeight(viewer, lat, lng) {
+        try {
+            const positions = [Cesium.Cartographic.fromDegrees(lng, lat)];
+            const sampled = await Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, positions);
+            return sampled[0].height || 0;
+        } catch (e) {
+            return 0;
+        }
+    },
+
+    /**
      * Load buildings within a radius of a location using SODA spatial query.
      */
     async loadAround(viewer, lat, lng, radiusM) {
@@ -37,6 +50,10 @@ const Buildings = {
         const north = lat + latDeg;
         const west = lng - lngDeg;
         const east = lng + lngDeg;
+
+        // Sample terrain height at search center for building placement
+        this._terrainHeight = await this.getTerrainHeight(viewer, lat, lng);
+        console.log(`Building terrain height: ${this._terrainHeight.toFixed(1)}m`);
 
         // SODA within_box spatial query
         const params = new URLSearchParams({
@@ -102,18 +119,21 @@ const Buildings = {
         // Use a counter-based ID since this dataset doesn't have stable IDs
         const bldgId = this.entities.length;
 
+        // Use absolute heights (terrain + building) so polygons stay pickable
+        const groundH = this._terrainHeight || 0;
+
         const entity = viewer.entities.add({
             name: `bldg_${bldgId}`,
             polygon: {
                 hierarchy: Cesium.Cartesian3.fromDegreesArray(positions),
-                extrudedHeight: height,
-                extrudedHeightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
-                height: 0,
-                heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                perPositionHeight: false,
+                height: groundH + 0.5,
+                extrudedHeight: groundH + height,
                 material: color.withAlpha(0.85),
                 outline: true,
                 outlineColor: Cesium.Color.BLACK.withAlpha(0.3),
-                outlineWidth: 1
+                outlineWidth: 1,
+                heightReference: Cesium.HeightReference.NONE
             },
             properties: {
                 buildingId: bldgId,

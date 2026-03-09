@@ -123,22 +123,47 @@ function setupUI() {
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
     handler.setInputAction((click) => {
         const picked = viewer.scene.pick(click.position);
-        if (Cesium.defined(picked) && picked.id && picked.id.name?.startsWith('bldg_')) {
-            selectBuilding(picked.id);
-        } else {
-            selectBuilding(null);
+        console.log('Picked:', picked);
+        if (Cesium.defined(picked)) {
+            // Entity pick (buildings)
+            if (picked.id && picked.id.name?.startsWith('bldg_')) {
+                selectBuilding(picked.id);
+                return;
+            }
+            // 3D Tileset pick (trees) — ignore, don't deselect
+            if (picked instanceof Cesium.Cesium3DTileFeature) {
+                console.log('Clicked tree tileset — ignoring');
+                return;
+            }
         }
+        selectBuilding(null);
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
-    // Model upload
+    // Model upload (file input)
     modelUpload.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file || !Buildings.selectedEntity) return;
+        await handleModelFile(file);
+    });
 
-        const url = URL.createObjectURL(file);
-        await Buildings.replaceWithModel(viewer, Buildings.selectedEntity, url);
-        setStatus(`Replaced building with ${file.name}`);
-        updateStats();
+    // Model upload (drag & drop)
+    const dropZone = document.getElementById('dropZone');
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-over');
+    });
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('drag-over');
+    });
+    dropZone.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        const file = e.dataTransfer.files[0];
+        if (!file || !Buildings.selectedEntity) {
+            setStatus('Select a building first');
+            return;
+        }
+        await handleModelFile(file);
     });
 }
 
@@ -285,6 +310,13 @@ function selectBuilding(entity) {
         uploadInput.disabled = true;
         infoBox.classList.add('hidden');
     }
+}
+
+async function handleModelFile(file) {
+    const url = URL.createObjectURL(file);
+    await Buildings.replaceWithModel(viewer, Buildings.selectedEntity, url);
+    setStatus(`Replaced building with ${file.name}`);
+    updateStats();
 }
 
 function setStatus(msg) {

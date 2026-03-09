@@ -176,6 +176,58 @@ def mesh_colored(pts, rgb, voxel, sigma):
     return verts_real, faces, vert_colors
 
 
+def classify_tree(rgb):
+    """Compute conifer score (0=deciduous, 1=conifer) from point RGB.
+
+    Conifers (spruce, pine): darker, more blue-green.
+    Deciduous (poplar, elm, ash): lighter, more yellow-green.
+    """
+    cr, cg, cb = rgb[:, 0].mean(), rgb[:, 1].mean(), rgb[:, 2].mean()
+    total = cr + cg + cb
+    if total == 0:
+        return 0.0
+
+    # Darkness (conifers are darker overall)
+    brightness = total / (255 * 3)
+    dark_score = np.clip((0.28 - brightness) / 0.08, 0, 1)
+
+    # Blue/Red ratio (conifers more blue-green)
+    br = cb / max(cr, 1)
+    br_score = np.clip((br - 0.75) / 0.20, 0, 1)
+
+    # Green dominance — conifers have less red relative to green
+    rg_ratio = cr / max(cg, 1)
+    rg_score = np.clip((0.92 - rg_ratio) / 0.10, 0, 1)
+
+    return float(np.clip(dark_score * 0.5 + br_score * 0.3 + rg_score * 0.2, 0, 1))
+
+
+def tint_tree_colors(colors, conifer_score):
+    """Tint vertex colors based on conifer score for visual variety.
+
+    Conifers:  push toward darker blue-green
+    Deciduous: push toward warmer yellow-green
+    """
+    c = colors.astype(np.float32)
+
+    if conifer_score > 0.4:
+        # Conifer tint: darken, boost blue-green
+        t = (conifer_score - 0.4) / 0.6  # 0-1 within conifer range
+        c[:, 0] *= (1.0 - 0.20 * t)   # reduce red
+        c[:, 1] *= (1.0 - 0.05 * t)   # slight green reduction (darken)
+        c[:, 2] *= (1.0 + 0.15 * t)   # boost blue
+        c *= (1.0 - 0.12 * t)         # overall darken
+    else:
+        # Deciduous tint: warm up, brighten slightly
+        t = (0.4 - conifer_score) / 0.4  # 0-1 within deciduous range
+        c[:, 0] *= (1.0 + 0.12 * t)   # boost red (warmth)
+        c[:, 1] *= (1.0 + 0.06 * t)   # slight green boost
+        c[:, 2] *= (1.0 - 0.10 * t)   # reduce blue
+        c *= (1.0 + 0.05 * t)         # slight brighten
+
+    return np.clip(c, 0, 255).astype(np.uint8)
+
+
 def extract_trees(x, y, z, cls, r, g, b, cx, cy, z_base, dem, gxi, gyi, xmin, ymin):
     """Extract tree meshes. Returns (verts, faces, colors) or None."""
     tm = cls == 5
@@ -203,6 +255,8 @@ def extract_trees(x, y, z, cls, r, g, b, cx, cy, z_base, dem, gxi, gyi, xmin, ym
     all_verts, all_faces, all_colors = [], [], []
     vert_offset = 0
     count = 0
+    n_conifer = 0
+    n_deciduous = 0
 
     for cid in cluster_ids:
         mask = labels == cid
@@ -211,9 +265,19 @@ def extract_trees(x, y, z, cls, r, g, b, cx, cy, z_base, dem, gxi, gyi, xmin, ym
         if len(pts) < MIN_CLUSTER_PTS:
             continue
 
+        # Classify tree type from point colors
+        conifer_score = classify_tree(rgb)
+        if conifer_score > 0.4:
+            n_conifer += 1
+        else:
+            n_deciduous += 1
+
         verts, faces, colors = mesh_colored(pts, rgb, TREE_VOXEL, TREE_SIGMA)
         if verts is None:
             continue
+
+        # Tint vertex colors based on classification
+        colors = tint_tree_colors(colors, conifer_score)
 
         count += 1
         all_verts.append(verts)
@@ -227,7 +291,7 @@ def extract_trees(x, y, z, cls, r, g, b, cx, cy, z_base, dem, gxi, gyi, xmin, ym
     verts = np.vstack(all_verts)
     faces = np.vstack(all_faces)
     colors = np.vstack(all_colors)
-    print(f"    {count} trees, {len(verts):,} verts, {len(faces):,} faces")
+    print(f"    {count} trees ({n_conifer} conifer, {n_deciduous} deciduous), {len(verts):,} verts, {len(faces):,} faces")
     return verts, faces, colors
 
 

@@ -1,5 +1,167 @@
 {
   "tiles": {
+    "000_039": {
+      "file": "000_039_trees.glb",
+      "center_lat": 53.517402,
+      "center_lng": -113.711957,
+      "size_mb": 0.2,
+      "z_base_offset": 1.77,
+      "num_faces": 8108,
+      "num_trees": 50
+    },
+    "000_040": {
+      "file": "000_040_trees.glb",
+      "center_lat": 53.522003,
+      "center_lng": -113.711926,
+      "size_mb": 7.5,
+      "z_base_offset": 1.72,
+      "num_faces": 395670,
+      "num_trees": 50
+    },
+    "000_041": {
+      "file": "000_041_trees.glb",
+      "center_lat": 53.526603,
+      "center_lng": -113.711895,
+      "size_mb": 1.4,
+      "z_base_offset": 4.94,
+      "num_faces": 71980,
+      "num_trees": 50
+    },
+    "000_042": {
+      "file": "000_042_trees.glb",
+      "center_lat": 53.531204,
+      "center_lng": -113.711863,
+      "size_mb": 1.9,
+      "z_base_offset": 2.69,
+      "num_faces": 101088,
+      "num_trees": 50
+    },
+    "000_043": {
+      "file": "000_043_trees.glb",
+      "center_lat": 53.535805,
+      "center_lng": -113.711832,
+      "size_mb": 0.5,
+      "z_base_offset": 3.04,
+      "num_faces": 25420,
+      "num_trees": 50
+    },
+    "000_044": {
+      "file": "000_044_trees.glb",
+      "center_lat": 53.540405,
+      "center_lng": -113.711801,
+      "size_mb": 0.2,
+      "z_base_offset": 2.48,
+      "num_faces": 8344,
+      "num_trees": 50
+    },
+    "000_045": {
+      "file": "000_045_trees.glb",
+      "center_lat": 53.545006,
+      "center_lng": -113.71177,
+      "size_mb": 28.4,
+      "z_base_offset": 4.28,
+      "num_faces": 1490552,
+      "num_trees": 50
+    },
+    "000_046": {
+      "file": "000_046_trees.glb",
+      "center_lat": 53.549607,
+      "center_lng": -113.711738,
+      "size_mb": 2.5,
+      "z_base_offset": 4.95,
+      "num_faces": 132758,
+      "num_trees": 50
+    },
+    "000_047": {
+      "file": "000_047_trees.glb",
+      "center_lat": 53.554208,
+      "center_lng": -113.711707,
+      "size_mb": 0.7,
+      "z_base_offset": 1.44,
+      "num_faces": 36310,
+      "num_trees": 50
+    },
+    "000_048": {
+      "file": "000_048_trees.glb",
+      "center_lat": 53.558808,
+      "center_lng": -113.711676,
+      "size_mb": 6.2,
+      "z_base_offset": 6.4,
+      "num_faces": 322750,
+      "num_trees": 50
+    },
+    "000_049": {
+      "file": "000_049_trees.glb",
+      "center_lat": 53.563409,
+      "center_lng": -113.711645,
+      "size_mb": 0.7,
+      "z_base_offset": 3.31,
+      "num_faces": 34740,
+      "num_trees": 50
+    },
+    "000_050": {
+      "file": "000_050_trees.glb",
+      "center_lat": 53.56801,
+      "center_lng": -113.711613,
+      "size_mb": 0.6,
+      "z_base_offset": 4.02,
+      "num_faces": 29132,
+      "num_trees": 50
+    },
+    "000_051": {
+      "file": "000_051_trees.glb",
+      "center_lat": 53.57261,
+      "center_lng": -113.711582,
+      "size_mb": 16.3,
+      "z_base_offset": 3.32,
+      "num_faces": 854580,
+      "num_trees": 50
+    },
+    "000_052": {
+      "file": "000_052_trees.glb",
+      "center_lat": 53.577211,
+      "center_lng": -113.711551,
+      "size_mb": 17.1,
+      "z_base_offset": 2.01,
+      "num_faces": 895762,
+      "num_trees": 50
+    },
+    "000_053": {
+      "file": "000_053_trees.glb",
+      "center_lat": 53.581812,
+      "center_lng": -113.711519,
+      "size_mb": 0.1,
+      "z_base_offset": 2.1,
+      "num_faces": 2664,
+      "num_trees": 50
+    },
+    "000_055": {
+      "file": "000_055_trees.glb",
+      "center_lat": 53.59079,
+      "center_lng": -113.711458,
+      "size_mb": 16.6,
+      "z_base_offset": 8.99,
+      "num_faces": 868454,
+      "num_trees": 50
+    },
+    "001_038": {
+      "file": "001_038_trees.glb",
+      "center_lat": 53.513109,
+      "center_lng": -113.705767,
+      "size_mb": 1.2,
+      "z_base_offset": 8.64,
+      "num_faces": 61438,
+      "num_trees": 50
+    },
+    "001_039": {
+      "file": "001_039_trees.glb",
+      "center_lat": 53.517387,
+      "center_lng": -113.705738,
+      "size_mb": 1.2,
+      "z_base_offset": 1.92,
+      "num_faces": 62160,
+      "num_trees": 50
+    },
     "010_040": {
       "file": "010_040_trees.glb",
       "center_lat": 53.521796,

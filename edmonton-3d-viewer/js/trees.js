@@ -108,18 +108,11 @@ const Trees = {
                 // Store terrain height for later offset adjustments
                 tileInfo._terrainHeight = terrainHeight;
 
-                // Enhance LiDAR vertex colors: boost greens, add depth
+                // Minimal: just pass through natural LiDAR + classification colors
                 tileset.customShader = new Cesium.CustomShader({
                     fragmentShaderText: `
                         void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {
-                            vec3 c = material.diffuse;
-                            // Boost contrast and saturation without blowing out
-                            c = pow(c, vec3(0.6));
-                            // Push toward natural green tones
-                            c.r *= 0.5;
-                            c.g *= 0.95;
-                            c.b *= 0.4;
-                            material.diffuse = clamp(c, 0.0, 1.0);
+                            // Pass through vertex colors with no modification
                         }
                     `
                 });
