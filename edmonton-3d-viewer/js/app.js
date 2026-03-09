@@ -13,6 +13,12 @@ let searchMarker = null;
 let osmLayer = null;
 let satelliteLayer = null;
 
+// 3D model conversion service URL (unified gateway for all formats)
+const CONVERT_API = new URLSearchParams(window.location.search).get('convertApi') || '';
+const NATIVE_3D_FORMATS = ['.glb', '.gltf'];
+const CONVERTIBLE_FORMATS = ['.obj', '.fbx', '.dae', '.3ds', '.stl', '.ply', '.usd'];
+const SKP_FORMAT = '.skp';
+
 async function init() {
     // Set Cesium Ion access token for World Terrain
     Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxNWY5NWZiZi0yOWViLTQ4NWMtYTk4NS1jNjZkMzZiYmNlNDEiLCJpZCI6NDAwNDM0LCJpYXQiOjE3NzMwMDYzODB9.Ga_Zl92AgOgkzaPUOWaSlQVK2s-PJMlFfuXUJ7LHv4o';
@@ -364,9 +370,73 @@ function selectBuilding(entity) {
 }
 
 async function handleModelFile(file) {
-    const url = URL.createObjectURL(file);
-    await Buildings.replaceWithModel(viewer, Buildings.selectedEntity, url);
-    setStatus(`Replaced building with ${file.name}`);
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+
+    if (NATIVE_3D_FORMATS.includes(ext)) {
+        // Direct load — GLB/glTF
+        const url = URL.createObjectURL(file);
+        await Buildings.replaceWithModel(viewer, Buildings.selectedEntity, url);
+        setStatus(`Replaced building with ${file.name}`);
+    } else if (ext === SKP_FORMAT) {
+        // SKP → GLB via SketchUp 8 + Blender pipeline
+        if (!CONVERT_API) {
+            setStatus('Conversion service not configured. Add ?convertApi=URL to page URL.');
+            return;
+        }
+        setStatus(`Converting SketchUp file ${file.name}... (this may take a minute)`);
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const resp = await fetch(`${CONVERT_API}/convert/skp`, {
+                method: 'POST',
+                body: formData,
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({ error: resp.statusText }));
+                const detail = err.detail || err.error || `HTTP ${resp.status}`;
+                const msg = typeof detail === 'object' ? (detail.error || detail.hint || JSON.stringify(detail)) : detail;
+                throw new Error(msg);
+            }
+            const glbBlob = await resp.blob();
+            const url = URL.createObjectURL(glbBlob);
+            await Buildings.replaceWithModel(viewer, Buildings.selectedEntity, url);
+            setStatus(`Converted and applied ${file.name}`);
+        } catch (e) {
+            setStatus(`SKP conversion error: ${e.message}`);
+            console.error('SKP conversion error:', e);
+            return;
+        }
+    } else if (CONVERTIBLE_FORMATS.includes(ext)) {
+        // Convert via Blender API then load
+        if (!CONVERT_API) {
+            setStatus('Conversion service not configured. Add ?convertApi=URL to page URL.');
+            return;
+        }
+        setStatus(`Converting ${file.name} to GLB...`);
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const resp = await fetch(`${CONVERT_API}/convert`, {
+                method: 'POST',
+                body: formData,
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({ error: resp.statusText }));
+                throw new Error(err.error || `HTTP ${resp.status}`);
+            }
+            const glbBlob = await resp.blob();
+            const url = URL.createObjectURL(glbBlob);
+            await Buildings.replaceWithModel(viewer, Buildings.selectedEntity, url);
+            setStatus(`Converted and applied ${file.name}`);
+        } catch (e) {
+            setStatus(`Conversion error: ${e.message}`);
+            console.error('Model conversion error:', e);
+            return;
+        }
+    } else {
+        setStatus(`Unsupported format: ${ext}. Use .glb, .skp, .obj, .fbx, .dae, or .stl`);
+        return;
+    }
     updateStats();
 }
 

@@ -37,13 +37,13 @@ from pyproj import Transformer
 LAZ_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(LAZ_DIR, "edmonton-3d-viewer", "data", "tree_tiles")
 
-BOX_SIZE = 200
+BOX_SIZE = 512
 MIN_TREE_HEIGHT = 3.0
 TREE_VOXEL = 0.4
 TREE_SIGMA = 1.2
 CLUSTER_CELL = 2.5
 MIN_CLUSTER_PTS = 80
-MAX_TREES = 50
+MAX_TREES = 200
 
 # CRS transformer: EPSG:3776 (Alberta 3TM 114) → WGS84
 transformer = Transformer.from_crs("EPSG:3776", "EPSG:4326", always_xy=True)
@@ -74,6 +74,9 @@ def load_tile(tile_name):
     r = np.array(las.red[box_mask])
     g = np.array(las.green[box_mask])
     b = np.array(las.blue[box_mask])
+
+    if len(r) == 0 or len(x) == 0:
+        return None
 
     if r.max() > 255:
         r = np.clip(r / 256, 0, 255).astype(np.uint8)
@@ -458,8 +461,8 @@ def write_tileset_json(filepath, glb_filename):
         "asset": {"version": "1.0"},
         "geometricError": 500,
         "root": {
-            "boundingVolume": {"sphere": [0, 0, 0, 200]},
-            "geometricError": 200,
+            "boundingVolume": {"sphere": [0, 0, 0, 400]},
+            "geometricError": 400,
             "content": {"uri": glb_filename},
             "transform": [
                 1, 0, 0, 0,
@@ -484,7 +487,7 @@ def process_tile(tile_name):
     # Load
     result = load_tile(tile_name)
     if result is None:
-        print(f"  SKIP: LAZ file not found")
+        print(f"  SKIP: LAZ file not found or empty")
         return None
     x, y, z, cls, r, g, b, cx, cy = result
 

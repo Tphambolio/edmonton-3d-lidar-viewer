@@ -1,0 +1,15 @@
+[Unit]
+Description=3D Model Conversion Service (SKP→GLB)
+After=network.target
+
+[Service]
+Type=simple
+User=rpas
+WorkingDirectory=/home/rpas/2025-Edm-VegLiDAR-LAZ/scripts
+ExecStart=/home/rpas/miniforge3/bin/python3 convert_service.py --host 127.0.0.1 --port 5000
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
