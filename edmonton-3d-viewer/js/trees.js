@@ -47,21 +47,34 @@ const Trees = {
     },
 
     /**
-     * Sample terrain height at a position using CesiumJS terrain provider.
+     * Sample terrain heights across a tile and return {center, min}.
+     * Samples center + 4 edge midpoints to capture terrain variation.
      */
-    async getTerrainHeight(viewer, lat, lng) {
-        const positions = [Cesium.Cartographic.fromDegrees(lng, lat)];
+    async getTerrainHeights(viewer, lat, lng) {
+        // ~256m offset in degrees (half a 512m tile)
+        const dLat = 256 / 111000;
+        const dLng = 256 / (111000 * Math.cos(lat * Math.PI / 180));
+        const positions = [
+            Cesium.Cartographic.fromDegrees(lng, lat),           // center
+            Cesium.Cartographic.fromDegrees(lng, lat + dLat),    // N
+            Cesium.Cartographic.fromDegrees(lng, lat - dLat),    // S
+            Cesium.Cartographic.fromDegrees(lng - dLng, lat),    // W
+            Cesium.Cartographic.fromDegrees(lng + dLng, lat),    // E
+        ];
         try {
             const terrain = viewer.terrainProvider;
-            // Wait for terrain provider to be ready
             if (terrain.ready === false) {
                 await terrain.readyPromise;
             }
             const updated = await Cesium.sampleTerrainMostDetailed(terrain, positions);
-            return updated[0].height || 0;
+            const heights = updated.map(p => p.height || 0);
+            return {
+                center: heights[0],
+                min: Math.min(...heights)
+            };
         } catch (e) {
             console.warn('Terrain sampling failed, using 0:', e);
-            return 0;
+            return { center: 0, min: 0 };
         }
     },
 
@@ -88,25 +101,25 @@ const Trees = {
                     dynamicScreenSpaceError: false
                 });
 
-                // Sample terrain height at the tile center
-                const terrainHeight = await this.getTerrainHeight(
+                // Sample terrain across the tile to find minimum elevation
+                // Mesh z=0 corresponds to the tile's minimum ground elevation,
+                // so we position using min terrain height for correct ground contact
+                const terrain = await this.getTerrainHeights(
                     viewer, tileInfo.center_lat, tileInfo.center_lng
                 );
-                console.log(`Terrain height at ${tileName}: ${terrainHeight.toFixed(1)}m`);
+                console.log(`Terrain at ${tileName}: center=${terrain.center.toFixed(1)}m, min=${terrain.min.toFixed(1)}m`);
 
-                // Override transform using CesiumJS's own ENU math
-                // z_base_offset = how far above z_base the center ground is
-                // Subtract it so mesh z=0 (z_base) sits at the correct elevation
-                const zBaseOffset = tileInfo.z_base_offset || 0;
+                // Position mesh origin (Y=0 = z_base) at the lowest terrain point
                 tileset.root.transform = Cesium.Matrix4.IDENTITY;
                 const center = Cesium.Cartesian3.fromDegrees(
                     tileInfo.center_lng, tileInfo.center_lat,
-                    terrainHeight - zBaseOffset + this.heightOffset
+                    terrain.min + this.heightOffset
                 );
                 tileset.modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(center);
 
-                // Store terrain height for later offset adjustments
-                tileInfo._terrainHeight = terrainHeight;
+                // Store terrain heights for later offset adjustments
+                tileInfo._terrainMin = terrain.min;
+                tileInfo._terrainCenter = terrain.center;
 
                 // Minimal: just pass through natural LiDAR + classification colors
                 tileset.customShader = new Cesium.CustomShader({
@@ -137,11 +150,10 @@ const Trees = {
             const tileName = [...this.loadedTiles][i];
             const tileInfo = this.tileIndex.tiles[tileName];
             if (!tileInfo) return;
-            const terrainHeight = tileInfo._terrainHeight || 0;
-            const zBaseOffset = tileInfo.z_base_offset || 0;
+            const terrainMin = tileInfo._terrainMin || 0;
             const center = Cesium.Cartesian3.fromDegrees(
                 tileInfo.center_lng, tileInfo.center_lat,
-                terrainHeight - zBaseOffset + offset
+                terrainMin + offset
             );
             ts.modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(center);
         });
