@@ -1,0 +1,39 @@
+{
+  "asset": {
+    "version": "1.0"
+  },
+  "geometricError": 500,
+  "root": {
+    "boundingVolume": {
+      "sphere": [
+        0,
+        0,
+        0,
+        200
+      ]
+    },
+    "geometricError": 200,
+    "content": {
+      "uri": "025_061_trees.glb"
+    },
+    "transform": [
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    "refine": "ADD"
+  }
+}
