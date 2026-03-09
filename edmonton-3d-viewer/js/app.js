@@ -139,6 +139,36 @@ function setupUI() {
         selectBuilding(null);
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
+    // Populate model dropdown from catalog
+    const modelSelect = document.getElementById('modelSelect');
+    const applyModelBtn = document.getElementById('applyModelBtn');
+    for (const model of Buildings.MODEL_CATALOG) {
+        const opt = document.createElement('option');
+        opt.value = model.id;
+        opt.textContent = model.name;
+        opt.title = model.description;
+        modelSelect.appendChild(opt);
+    }
+
+    // Apply pre-built model
+    applyModelBtn.addEventListener('click', async () => {
+        const selectedId = modelSelect.value;
+        if (!selectedId || !Buildings.selectedEntity) return;
+        const model = Buildings.MODEL_CATALOG.find(m => m.id === selectedId);
+        if (!model) return;
+        setStatus(`Loading ${model.name}...`);
+        applyModelBtn.disabled = true;
+        try {
+            await Buildings.replaceWithModel(viewer, Buildings.selectedEntity, model.url, model.scale);
+            setStatus(`Replaced building with ${model.name}`);
+        } catch (e) {
+            setStatus(`Failed to load model: ${e.message}`);
+            console.error('Model load error:', e);
+        }
+        applyModelBtn.disabled = false;
+        updateStats();
+    });
+
     // Model upload (file input)
     modelUpload.addEventListener('change', async (e) => {
         const file = e.target.files[0];
@@ -286,6 +316,8 @@ function selectBuilding(entity) {
     const uploadInput = document.getElementById('modelUpload');
     const selectedDiv = document.getElementById('selectedBuilding');
     const infoBox = document.getElementById('infoBox');
+    const modelSelect = document.getElementById('modelSelect');
+    const applyModelBtn = document.getElementById('applyModelBtn');
 
     if (entity) {
         const props = entity.properties;
@@ -296,6 +328,8 @@ function selectBuilding(entity) {
 
         selectedDiv.textContent = `Selected: #${id} (${type}, ${height}m)`;
         uploadInput.disabled = false;
+        modelSelect.disabled = false;
+        applyModelBtn.disabled = false;
 
         document.getElementById('infoContent').innerHTML = `
             <table>
@@ -308,6 +342,9 @@ function selectBuilding(entity) {
     } else {
         selectedDiv.textContent = 'No building selected';
         uploadInput.disabled = true;
+        modelSelect.disabled = true;
+        applyModelBtn.disabled = true;
+        modelSelect.value = '';
         infoBox.classList.add('hidden');
     }
 }

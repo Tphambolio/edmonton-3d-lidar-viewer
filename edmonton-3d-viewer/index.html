@@ -42,8 +42,15 @@
         </div>
 
         <div class="upload-section">
-            <h3>Upload Custom Building</h3>
-            <p class="hint">Click a building first, then upload a .glb model to replace it.</p>
+            <h3>Replace Building Model</h3>
+            <p class="hint">Click a building first, then choose a model or upload your own.</p>
+            <div class="model-selector">
+                <select id="modelSelect" disabled>
+                    <option value="">-- Select model --</option>
+                </select>
+                <button id="applyModelBtn" disabled>Apply</button>
+            </div>
+            <div class="upload-divider">or upload custom</div>
             <input type="file" id="modelUpload" accept=".glb,.gltf" disabled>
             <div id="dropZone" class="drop-zone">Or drag & drop .glb file here</div>
             <div id="selectedBuilding">No building selected</div>

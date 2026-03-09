@@ -10,6 +10,16 @@ const Buildings = {
     // City of Edmonton SODA API — GeoJSON endpoint with real heights
     SODA_URL: 'https://data.edmonton.ca/resource/jpxi-a9a5.geojson',
 
+    // Pre-built model catalog (served from Cloudflare R2)
+    MODEL_CATALOG: [
+        { id: '8plex', name: '8-Plex Residential', description: '14m × 18m, 3 storeys (s-RML)',
+          url: 'https://pub-e37d9167d0644b6fb71d37ada161e611.r2.dev/models/8plex.glb', scale: 1.0 },
+        { id: 'skinny_houses', name: '2 Skinny Houses', description: '2 × 5.5m infill on standard lot',
+          url: 'https://pub-e37d9167d0644b6fb71d37ada161e611.r2.dev/models/skinny_houses.glb', scale: 1.0 },
+        { id: 'apartment', name: 'Apartment (6-storey)', description: '20m × 25m, 6 storeys',
+          url: 'https://pub-e37d9167d0644b6fb71d37ada161e611.r2.dev/models/apartment.glb', scale: 1.0 },
+    ],
+
     entities: [],
     selectedEntity: null,
     customModels: {},
@@ -180,23 +190,40 @@ const Buildings = {
     },
 
     /**
-     * Replace a building with an uploaded GLB model.
+     * Replace a building with a GLB model, aligned to the footprint's longest edge.
      */
-    async replaceWithModel(viewer, entity, glbUrl) {
+    async replaceWithModel(viewer, entity, glbUrl, scale) {
         if (!entity) return;
         const bldgId = entity.properties?.buildingId?.getValue();
 
-        // Get centroid
         const hierarchy = entity.polygon.hierarchy.getValue();
         const positions = hierarchy.positions;
+
+        // Compute centroid and collect cartographic positions
         let sumLat = 0, sumLng = 0;
+        const cartos = [];
         for (const pos of positions) {
             const carto = Cesium.Cartographic.fromCartesian(pos);
-            sumLat += Cesium.Math.toDegrees(carto.latitude);
-            sumLng += Cesium.Math.toDegrees(carto.longitude);
+            const lat = Cesium.Math.toDegrees(carto.latitude);
+            const lng = Cesium.Math.toDegrees(carto.longitude);
+            sumLat += lat;
+            sumLng += lng;
+            cartos.push({ lat, lng });
         }
         const centLat = sumLat / positions.length;
         const centLng = sumLng / positions.length;
+
+        // Find heading from longest polygon edge
+        let maxDist = 0, heading = 0;
+        for (let i = 0; i < cartos.length - 1; i++) {
+            const dx = (cartos[i + 1].lng - cartos[i].lng) * Math.cos(centLat * Math.PI / 180);
+            const dy = cartos[i + 1].lat - cartos[i].lat;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > maxDist) {
+                maxDist = dist;
+                heading = Math.atan2(dx, dy);
+            }
+        }
 
         entity.show = false;
 
@@ -204,13 +231,18 @@ const Buildings = {
             viewer.entities.remove(this.customModels[bldgId]);
         }
 
+        const position = Cesium.Cartesian3.fromDegrees(centLng, centLat);
+        const hpr = new Cesium.HeadingPitchRoll(heading, 0, 0);
+        const orientation = Cesium.Transforms.headingPitchRollQuaternion(position, hpr);
+
         const modelEntity = viewer.entities.add({
             name: `custom_bldg_${bldgId}`,
-            position: Cesium.Cartesian3.fromDegrees(centLng, centLat),
+            position: position,
+            orientation: orientation,
             model: {
                 uri: glbUrl,
                 heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-                scale: 1.0
+                scale: scale || 1.0
             }
         });
 
