@@ -126,10 +126,12 @@ def generate_skinny_houses(output_path):
     step_c = [160, 155, 145, 255]    # concrete porch step
     door_c = [80, 60, 45, 255]       # door
 
-    house_w = 5.5   # width (X) — each skinny house
-    house_d = 25.0  # depth (Y) — typical Edmonton lot depth minus setbacks
-    wall_h = 7.0    # wall height (Z)
-    gable_h = 2.0   # gable peak above walls
+    # Based on real Edmonton skinny houses at 10915/10917 127 St:
+    # Each house: ~6.5m frontage × 18m deep × 9.3m tall
+    house_w = 6.5   # street frontage per house (X)
+    house_d = 18.0  # depth into lot (Y)
+    wall_h = 7.5    # wall height (Z)
+    gable_h = 2.0   # gable peak above walls (total ~9.5m)
     gap = 1.2       # between houses (0.6m setback each side)
 
     for i, (x_off, siding_color) in enumerate([
