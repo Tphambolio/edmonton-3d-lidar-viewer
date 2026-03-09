@@ -129,6 +129,8 @@ html, body, #cesiumContainer { width: 100%; height: 100%; overflow: hidden; }
 }
 .model-selector button:hover { background: #5aa0e9; }
 .model-selector button:disabled { background: #444; cursor: default; }
+#rotateModelBtn { background: #5a6a7a; padding: 6px 8px; font-size: 12px; }
+#rotateModelBtn:hover:not(:disabled) { background: #6a7a8a; }
 
 .upload-divider {
     text-align: center;

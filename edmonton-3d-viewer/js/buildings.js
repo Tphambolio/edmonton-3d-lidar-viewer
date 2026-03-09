@@ -270,5 +270,28 @@ const Buildings = {
 
         this.customModels[bldgId] = modelEntity;
         return modelEntity;
+    },
+
+    /**
+     * Rotate a custom model 90° clockwise around its up axis.
+     */
+    rotateModel(viewer, bldgId) {
+        const modelEntity = this.customModels[bldgId];
+        if (!modelEntity) return;
+
+        const pos = modelEntity.position.getValue(Cesium.JulianDate.now());
+        const oldOrientation = modelEntity.orientation.getValue(Cesium.JulianDate.now());
+
+        // Create a 90° rotation quaternion around the local up axis
+        const rotate90 = Cesium.Quaternion.fromAxisAngle(
+            Cesium.Cartesian3.UNIT_Z, -Cesium.Math.PI_OVER_TWO
+        );
+
+        // Convert to local frame, apply rotation, convert back
+        const hpr = Cesium.HeadingPitchRoll.fromQuaternion(oldOrientation);
+        hpr.heading += Cesium.Math.PI_OVER_TWO;
+        const newOrientation = Cesium.Transforms.headingPitchRollQuaternion(pos, hpr);
+
+        modelEntity.orientation = newOrientation;
     }
 };

@@ -150,6 +150,16 @@ function setupUI() {
         modelSelect.appendChild(opt);
     }
 
+    // Rotate model 90°
+    const rotateModelBtn = document.getElementById('rotateModelBtn');
+    rotateModelBtn.addEventListener('click', () => {
+        if (!Buildings.selectedEntity) return;
+        const bldgId = Buildings.selectedEntity.properties?.buildingId?.getValue();
+        if (bldgId !== undefined && Buildings.customModels[bldgId]) {
+            Buildings.rotateModel(viewer, bldgId);
+        }
+    });
+
     // Apply pre-built model
     applyModelBtn.addEventListener('click', async () => {
         const selectedId = modelSelect.value;
@@ -161,6 +171,7 @@ function setupUI() {
         try {
             await Buildings.replaceWithModel(viewer, Buildings.selectedEntity, model.url, model.scale);
             setStatus(`Replaced building with ${model.name}`);
+            rotateModelBtn.disabled = false;
         } catch (e) {
             setStatus(`Failed to load model: ${e.message}`);
             console.error('Model load error:', e);
@@ -318,6 +329,7 @@ function selectBuilding(entity) {
     const infoBox = document.getElementById('infoBox');
     const modelSelect = document.getElementById('modelSelect');
     const applyModelBtn = document.getElementById('applyModelBtn');
+    const rotateModelBtn = document.getElementById('rotateModelBtn');
 
     if (entity) {
         const props = entity.properties;
@@ -330,6 +342,7 @@ function selectBuilding(entity) {
         uploadInput.disabled = false;
         modelSelect.disabled = false;
         applyModelBtn.disabled = false;
+        rotateModelBtn.disabled = !Buildings.customModels[id];
 
         document.getElementById('infoContent').innerHTML = `
             <table>
@@ -344,6 +357,7 @@ function selectBuilding(entity) {
         uploadInput.disabled = true;
         modelSelect.disabled = true;
         applyModelBtn.disabled = true;
+        rotateModelBtn.disabled = true;
         modelSelect.value = '';
         infoBox.classList.add('hidden');
     }
