@@ -130,7 +130,7 @@ def generate_skinny_houses(output_path):
     house_d = 14.0  # depth (Y)
     wall_h = 7.0    # wall height (Z)
     gable_h = 2.0   # gable peak above walls
-    gap = 4.0       # between houses
+    gap = 1.2       # between houses (0.6m setback each side)
 
     for i, (x_off, siding_color) in enumerate([
         (-(house_w + gap) / 2, siding),
@@ -169,8 +169,8 @@ def generate_skinny_houses(output_path):
         parts.append(colored_box([1.0, 0.15, 2.2], transform=T, color=door_c))
 
         # Front windows — 2 per storey, 2 storeys
-        for storey in range(2):
-            z_base = storey * 3.5 + 2.0 + (0.5 if storey == 0 else 0)
+        storey_heights = [2.8, 5.5]  # window centers well above ground
+        for z_base in storey_heights:
             for col in [-1, 1]:
                 cx = x_off + col * 1.5
                 T = trimesh.transformations.translation_matrix([cx, -house_d / 2 - 0.05, z_base])
@@ -178,8 +178,7 @@ def generate_skinny_houses(output_path):
 
         # Side windows — 3 per storey per side
         for side in [-1, 1]:
-            for storey in range(2):
-                z_base = storey * 3.5 + 2.0 + (0.5 if storey == 0 else 0)
+            for z_base in storey_heights:
                 for col in range(3):
                     cy = (col - 1.0) * 3.5
                     T = trimesh.transformations.translation_matrix([
