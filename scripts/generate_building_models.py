@@ -159,7 +159,7 @@ def generate_skinny_houses(output_path):
         R = trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0])
         roof_mesh.apply_transform(R)
         # Translate to correct position
-        T = trimesh.transformations.translation_matrix([x_off, -(house_d + 0.6) / 2, wall_h])
+        T = trimesh.transformations.translation_matrix([x_off, (house_d + 0.6) / 2, wall_h])
         roof_mesh.apply_transform(T)
         roof_mesh.visual.vertex_colors = np.tile(roof_c, (len(roof_mesh.vertices), 1))
         parts.append(roof_mesh)
