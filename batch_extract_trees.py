@@ -21,6 +21,7 @@ Usage:
 
 import sys
 import os
+import gc
 import argparse
 import json
 import struct
@@ -44,12 +45,16 @@ TREE_SIGMA = 1.2
 CLUSTER_CELL = 2.5
 MIN_CLUSTER_PTS = 80
 MAX_TREES = 200
+MAX_VERTS_PER_TILE = 2_000_000  # ~50MB GLB — caps memory at ~4GB per tile
 
 # CRS transformer: EPSG:3776 (Alberta 3TM 114) → WGS84
 transformer = Transformer.from_crs("EPSG:3776", "EPSG:4326", always_xy=True)
 
 
 # ========== LIDAR LOADING ==========
+
+MAX_POINTS = 3_000_000  # Downsample if tile exceeds this to prevent OOM
+MAX_PTS_PER_TREE = 15_000  # Cap points per individual tree to limit mesh_colored memory
 
 def load_tile(tile_name):
     """Load LAZ tile, crop to center box. Returns None if file missing."""
@@ -75,8 +80,20 @@ def load_tile(tile_name):
     g = np.array(las.green[box_mask])
     b = np.array(las.blue[box_mask])
 
+    # Free LAZ object immediately
+    del las, box_mask
+    gc.collect()
+
     if len(r) == 0 or len(x) == 0:
         return None
+
+    # Downsample if too many points (prevents OOM on dense tiles)
+    if len(x) > MAX_POINTS:
+        ratio = MAX_POINTS / len(x)
+        print(f"  Downsampling: {len(x):,} → {MAX_POINTS:,} points ({ratio:.1%})")
+        idx = np.random.default_rng(42).choice(len(x), MAX_POINTS, replace=False)
+        idx.sort()
+        x, y, z, cls, r, g, b = x[idx], y[idx], z[idx], cls[idx], r[idx], g[idx], b[idx]
 
     if r.max() > 255:
         r = np.clip(r / 256, 0, 255).astype(np.uint8)
@@ -268,6 +285,11 @@ def extract_trees(x, y, z, cls, r, g, b, cx, cy, z_base, dem, gxi, gyi, xmin, ym
         if len(pts) < MIN_CLUSTER_PTS:
             continue
 
+        # Downsample large individual trees to cap voxel grid memory
+        if len(pts) > MAX_PTS_PER_TREE:
+            idx = np.random.default_rng(42).choice(len(pts), MAX_PTS_PER_TREE, replace=False)
+            pts, rgb = pts[idx], rgb[idx]
+
         # Classify tree type from point colors
         conifer_score = classify_tree(rgb)
         if conifer_score > 0.4:
@@ -287,6 +309,11 @@ def extract_trees(x, y, z, cls, r, g, b, cx, cy, z_base, dem, gxi, gyi, xmin, ym
         all_faces.append(faces + vert_offset)
         all_colors.append(colors)
         vert_offset += len(verts)
+
+        # Cap total vertices to prevent OOM on dense tiles
+        if vert_offset >= MAX_VERTS_PER_TILE:
+            print(f"    Vertex cap reached ({vert_offset:,} verts) after {count} trees — stopping early")
+            break
 
     if not all_verts:
         return None
@@ -521,6 +548,11 @@ def process_tile(tile_name):
     print(f"  Tree points: {tm.sum():,}, ground: {gm.sum():,}")
     mesh_result = extract_trees(x, y, z, cls, r, g, b, cx, cy, z_base,
                                 dem, gxi, gyi, xmin, ymin)
+
+    # Free raw point cloud and DEM — no longer needed
+    del x, y, z, cls, r, g, b, dem, gxi, gyi, gm, tm
+    gc.collect()
+
     if mesh_result is None:
         print(f"  SKIP: no meshable trees")
         return None
@@ -543,14 +575,20 @@ def process_tile(tile_name):
     elapsed = time.time() - t0
     print(f"  -> {glb_filename} ({size_mb:.1f} MB) in {elapsed:.1f}s")
 
+    num_faces = len(faces)
+
+    # Free memory — dense tiles can use several GB
+    del verts, faces, colors
+    gc.collect()
+
     return {
         "file": glb_filename,
         "center_lat": round(center_lat, 6),
         "center_lng": round(center_lng, 6),
         "size_mb": round(size_mb, 1),
         "z_base_offset": round(z_base_offset, 2),
-        "num_faces": len(faces),
-        "num_trees": len(set(range(MAX_TREES)))  # approximate
+        "num_faces": num_faces,
+        "num_trees": MAX_TREES
     }
 
 
