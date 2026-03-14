@@ -327,6 +327,8 @@ async function loadScene(lat, lng, radiusM) {
     // Clear previous data
     Buildings.clear(viewer);
     Trees.clear(viewer);
+    demolishedBuildings.length = 0;
+    updateDemolishedList();
 
     // Load buildings
     const bldgCount = await Buildings.loadAround(viewer, lat, lng, radiusM);
@@ -369,7 +371,8 @@ function selectBuilding(entity) {
                 <tr><td>Type</td><td>${type}</td></tr>
                 <tr><td>Height</td><td>${height}m</td></tr>
                 <tr><td>Area</td><td>${area.toFixed ? area.toFixed(0) : area} m&sup2;</td></tr>
-            </table>`;
+            </table>
+            <button onclick="demolishBuilding(Buildings.selectedEntity)" style="margin-top:8px;padding:6px 12px;border:none;border-radius:4px;background:#c0392b;color:white;cursor:pointer;font-size:12px;width:100%;font-weight:600;">Demolish</button>`;
         infoBox.classList.remove('hidden');
     } else {
         selectedDiv.textContent = 'No building selected';
@@ -457,6 +460,86 @@ async function handleModelFile(file) {
 
 let selectedCustomBuilding = null;
 window._editingBuildingId = null;
+
+// Demolished buildings tracker
+const demolishedBuildings = [];
+
+function demolishBuilding(entity) {
+    if (!entity) return;
+    const props = entity.properties;
+    const id = props?.buildingId?.getValue();
+    const type = props?.type?.getValue() || '?';
+    const height = props?.height?.getValue() || '?';
+    const area = props?.area_m2?.getValue() || 0;
+
+    entity.show = false;
+    demolishedBuildings.push({
+        entity,
+        id,
+        type,
+        height,
+        area
+    });
+
+    // Also hide any custom model that was on this building
+    if (Buildings.customModels[id]) {
+        Buildings.customModels[id].show = false;
+    }
+
+    selectBuilding(null);
+    updateDemolishedList();
+    updateStats();
+    setStatus(`Demolished building #${id} (${type}, ${height}m)`);
+}
+
+function restoreBuilding(index) {
+    if (index < 0 || index >= demolishedBuildings.length) return;
+    const item = demolishedBuildings[index];
+    item.entity.show = true;
+
+    // Restore custom model if any
+    if (Buildings.customModels[item.id]) {
+        Buildings.customModels[item.id].show = true;
+    }
+
+    demolishedBuildings.splice(index, 1);
+    updateDemolishedList();
+    updateStats();
+    setStatus(`Restored building #${item.id}`);
+}
+
+function restoreAllBuildings() {
+    for (const item of demolishedBuildings) {
+        item.entity.show = true;
+        if (Buildings.customModels[item.id]) {
+            Buildings.customModels[item.id].show = true;
+        }
+    }
+    demolishedBuildings.length = 0;
+    updateDemolishedList();
+    updateStats();
+    setStatus('Restored all demolished buildings');
+}
+
+function updateDemolishedList() {
+    const listDiv = document.getElementById('demolishedList');
+    if (!listDiv) return;
+
+    if (demolishedBuildings.length === 0) {
+        listDiv.classList.add('hidden');
+        return;
+    }
+
+    listDiv.classList.remove('hidden');
+    const itemsDiv = document.getElementById('demolishedItems');
+    itemsDiv.innerHTML = demolishedBuildings.map((b, i) => `
+        <div class="demolished-item">
+            <span class="item-info">#${b.id} (${b.type}, ${b.height}m, ${typeof b.area === 'number' ? b.area.toFixed(0) : b.area} m²)</span>
+            <button class="restore-btn" onclick="restoreBuilding(${i})" title="Undo demolish">&#8634;</button>
+        </div>
+    `).join('');
+    itemsDiv.innerHTML += `<button class="restore-all-btn" onclick="restoreAllBuildings()">Restore All</button>`;
+}
 
 function setupBuildingToolUI() {
     const drawBtn = document.getElementById('drawBuildingBtn');
@@ -1150,10 +1233,12 @@ function setStatus(msg) {
 
 function updateStats() {
     const stats = document.getElementById('stats');
+    const demolished = demolishedBuildings.length;
     stats.textContent = `Buildings: ${Buildings.entities.length} | ` +
         `Tree tilesets: ${Trees.loadedTiles.size} | ` +
         `Custom models: ${Object.keys(Buildings.customModels).length} | ` +
-        `Custom buildings: ${BuildingTool.buildings.length}`;
+        `Custom buildings: ${BuildingTool.buildings.length}` +
+        (demolished ? ` | Demolished: ${demolished}` : '');
 }
 
 // Close info box
