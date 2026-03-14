@@ -582,6 +582,35 @@ function setupBuildingToolUI() {
     sliderDisplay('doorHeightSlider', 'doorHeightVal', 'm');
     sliderDisplay('parapetHeightSlider', 'parapetHeightVal', 'm');
 
+    // Roof type buttons
+    window._roofType = 'flat';
+    document.querySelectorAll('.roof-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.roof-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            window._roofType = btn.dataset.roof;
+
+            // Show/hide pitch slider and parapet based on roof type
+            const pitchRow = document.getElementById('roofPitchRow');
+            const roofColorRow = document.getElementById('roofColorRow');
+            const parapetRow = document.getElementById('parapetRow');
+            const isPitched = btn.dataset.roof !== 'flat';
+            pitchRow.style.display = isPitched ? 'flex' : 'none';
+            roofColorRow.style.display = isPitched ? 'flex' : 'none';
+            parapetRow.style.display = isPitched ? 'none' : 'flex';
+        });
+    });
+
+    // Roof pitch slider
+    const roofPitchSlider = document.getElementById('roofPitchSlider');
+    const roofPitchVal = document.getElementById('roofPitchVal');
+    roofPitchSlider.addEventListener('input', () => {
+        roofPitchVal.textContent = roofPitchSlider.value + '°';
+    });
+    // Initially hide pitch/color since default is flat
+    document.getElementById('roofPitchRow').style.display = 'none';
+    document.getElementById('roofColorRow').style.display = 'none';
+
     // Window offset slider
     const winOffsetSlider = document.getElementById('winOffsetSlider');
     const winOffsetVal = document.getElementById('winOffsetVal');
@@ -781,10 +810,13 @@ function setupBuildingToolUI() {
                 colors: {
                     wall: colorPicker.value,
                     glass: document.getElementById('glassColorPicker').value,
-                    frame: document.getElementById('frameColorPicker').value
+                    frame: document.getElementById('frameColorPicker').value,
+                    roof: document.getElementById('roofColorPicker').value
                 },
                 floorConfigs: { ...window._floorConfigs },
                 door: door,
+                roofType: window._roofType || 'flat',
+                roofPitch: parseFloat(document.getElementById('roofPitchSlider').value),
                 parapet: document.getElementById('addParapetChk').checked,
                 parapetHeight: parseFloat(document.getElementById('parapetHeightSlider').value)
             };
@@ -851,6 +883,8 @@ function setupBuildingToolUI() {
                 floorConfigs: { ...window._floorConfigs },
                 door: door,
                 colors: { ...config.colors },
+                roofType: config.roofType,
+                roofPitch: config.roofPitch,
                 parapet: config.parapet,
                 parapetHeight: config.parapetHeight
             };
@@ -1016,6 +1050,23 @@ function editSelectedCustomBuilding() {
         if (building.generationConfig.parapetHeight) {
             document.getElementById('parapetHeightSlider').value = building.generationConfig.parapetHeight;
             document.getElementById('parapetHeightVal').textContent = building.generationConfig.parapetHeight + 'm';
+        }
+        // Restore roof settings
+        const roofType = building.generationConfig.roofType || 'flat';
+        window._roofType = roofType;
+        document.querySelectorAll('.roof-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.roof === roofType);
+        });
+        const isPitched = roofType !== 'flat';
+        document.getElementById('roofPitchRow').style.display = isPitched ? 'flex' : 'none';
+        document.getElementById('roofColorRow').style.display = isPitched ? 'flex' : 'none';
+        document.getElementById('parapetRow').style.display = isPitched ? 'none' : 'flex';
+        if (building.generationConfig.roofPitch) {
+            document.getElementById('roofPitchSlider').value = building.generationConfig.roofPitch;
+            document.getElementById('roofPitchVal').textContent = building.generationConfig.roofPitch + '°';
+        }
+        if (building.generationConfig.colors?.roof) {
+            document.getElementById('roofColorPicker').value = building.generationConfig.colors.roof;
         }
         // Load the current floor:wall config into sliders
         window._currentFloor = 'all';

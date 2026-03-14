@@ -102,11 +102,28 @@ const BuildingGenerator = {
             scene.add(slab);
         }
 
-        // Parapet
-        if (config.parapet !== false) {
-            const parapetH = config.parapetHeight || 0.6;
-            const parapet = this._buildParapet(localPts, totalHeight, parapetH, wallMat);
-            scene.add(parapet);
+        // Roof
+        const roofType = config.roofType || 'flat';
+        const pitchAngle = config.roofPitch || 30; // degrees
+        const roofColor = config.colors?.roof || config.colors?.wall || '#CCBBAA';
+        const roofMat = new THREE.MeshStandardMaterial({
+            color: new THREE.Color(roofColor).multiplyScalar(0.9),
+            roughness: 0.7,
+            metalness: 0.1,
+            side: THREE.DoubleSide
+        });
+
+        if (roofType === 'flat') {
+            // Flat roof with optional parapet
+            if (config.parapet !== false) {
+                const parapetH = config.parapetHeight || 0.6;
+                const parapet = this._buildParapet(localPts, totalHeight, parapetH, wallMat);
+                scene.add(parapet);
+            }
+        } else {
+            // Pitched roof — compute OBB for ridge direction
+            const roof = this._buildRoof(localPts, totalHeight, roofType, pitchAngle, roofMat, wallMat);
+            scene.add(roof);
         }
 
         // Add ambient light for better default appearance
@@ -499,6 +516,258 @@ const BuildingGenerator = {
         }
 
         return group;
+    },
+
+    /**
+     * Build a pitched roof on the footprint.
+     * Uses the oriented bounding box to determine ridge direction.
+     */
+    _buildRoof(localPts, roofBase, roofType, pitchDeg, roofMat, wallMat) {
+        const group = new THREE.Group();
+        const pitchRad = pitchDeg * Math.PI / 180;
+
+        // Compute oriented bounding box
+        const obb = this._computeOBB(localPts);
+        // obb: { center, halfW, halfH, angle, axisU:{x,z}, axisV:{x,z} }
+        // axisU = along the longer dimension (ridge direction)
+        // axisV = across the shorter dimension (slope direction)
+
+        const ridgeHeight = obb.halfH * Math.tan(pitchRad);
+
+        if (roofType === 'gable') {
+            // Ridge line runs along axisU at center, elevated by ridgeHeight
+            // Two sloped planes (left and right of ridge)
+            // Two triangular gable walls at each end
+
+            const ridgeStart = {
+                x: obb.center.x - obb.axisU.x * obb.halfW,
+                z: obb.center.z - obb.axisU.z * obb.halfW
+            };
+            const ridgeEnd = {
+                x: obb.center.x + obb.axisU.x * obb.halfW,
+                z: obb.center.z + obb.axisU.z * obb.halfW
+            };
+
+            // 4 eave corners
+            const corners = this._obbCorners(obb);
+            // corners: [front-left, front-right, back-right, back-left]
+            // front = -axisU end, back = +axisU end
+            // left = -axisV side, right = +axisV side
+
+            const ry = roofBase + ridgeHeight;
+
+            // Left slope (corners 0,3 at eave, ridge above)
+            this._addTriangle(group,
+                { x: corners[0].x, y: roofBase, z: corners[0].z },
+                { x: ridgeStart.x, y: ry, z: ridgeStart.z },
+                { x: corners[3].x, y: roofBase, z: corners[3].z },
+                roofMat);
+            this._addTriangle(group,
+                { x: corners[3].x, y: roofBase, z: corners[3].z },
+                { x: ridgeStart.x, y: ry, z: ridgeStart.z },
+                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
+                roofMat);
+            this._addTriangle(group,
+                { x: corners[3].x, y: roofBase, z: corners[3].z },
+                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
+                { x: corners[0].x, y: roofBase, z: corners[0].z },
+                roofMat);
+
+            // Right slope (corners 1,2 at eave, ridge above)
+            this._addTriangle(group,
+                { x: corners[1].x, y: roofBase, z: corners[1].z },
+                { x: corners[2].x, y: roofBase, z: corners[2].z },
+                { x: ridgeStart.x, y: ry, z: ridgeStart.z },
+                roofMat);
+            this._addTriangle(group,
+                { x: corners[2].x, y: roofBase, z: corners[2].z },
+                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
+                { x: ridgeStart.x, y: ry, z: ridgeStart.z },
+                roofMat);
+            this._addTriangle(group,
+                { x: corners[2].x, y: roofBase, z: corners[2].z },
+                { x: corners[1].x, y: roofBase, z: corners[1].z },
+                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
+                roofMat);
+
+            // Gable wall triangles (front and back ends)
+            // Front gable (corners 0, 1, ridgeStart)
+            this._addTriangle(group,
+                { x: corners[0].x, y: roofBase, z: corners[0].z },
+                { x: corners[1].x, y: roofBase, z: corners[1].z },
+                { x: ridgeStart.x, y: ry, z: ridgeStart.z },
+                wallMat);
+            // Back gable (corners 3, 2, ridgeEnd)
+            this._addTriangle(group,
+                { x: corners[3].x, y: roofBase, z: corners[3].z },
+                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
+                { x: corners[2].x, y: roofBase, z: corners[2].z },
+                wallMat);
+
+        } else if (roofType === 'hip') {
+            // All four sides slope inward. Ridge is shorter than the building.
+            const corners = this._obbCorners(obb);
+            const ry = roofBase + ridgeHeight;
+
+            // Ridge inset from ends
+            const ridgeInset = Math.min(obb.halfH, obb.halfW * 0.8);
+            const ridgeStart = {
+                x: obb.center.x - obb.axisU.x * (obb.halfW - ridgeInset),
+                z: obb.center.z - obb.axisU.z * (obb.halfW - ridgeInset)
+            };
+            const ridgeEnd = {
+                x: obb.center.x + obb.axisU.x * (obb.halfW - ridgeInset),
+                z: obb.center.z + obb.axisU.z * (obb.halfW - ridgeInset)
+            };
+
+            // Left slope (2 triangles forming a trapezoid: corners 0,3 at eave, ridge above)
+            this._addTriangle(group,
+                { x: corners[0].x, y: roofBase, z: corners[0].z },
+                { x: ridgeStart.x, y: ry, z: ridgeStart.z },
+                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
+                roofMat);
+            this._addTriangle(group,
+                { x: corners[0].x, y: roofBase, z: corners[0].z },
+                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
+                { x: corners[3].x, y: roofBase, z: corners[3].z },
+                roofMat);
+
+            // Right slope
+            this._addTriangle(group,
+                { x: corners[1].x, y: roofBase, z: corners[1].z },
+                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
+                { x: ridgeStart.x, y: ry, z: ridgeStart.z },
+                roofMat);
+            this._addTriangle(group,
+                { x: corners[1].x, y: roofBase, z: corners[1].z },
+                { x: corners[2].x, y: roofBase, z: corners[2].z },
+                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
+                roofMat);
+
+            // Front hip triangle (corners 0, 1, ridgeStart)
+            this._addTriangle(group,
+                { x: corners[0].x, y: roofBase, z: corners[0].z },
+                { x: corners[1].x, y: roofBase, z: corners[1].z },
+                { x: ridgeStart.x, y: ry, z: ridgeStart.z },
+                roofMat);
+
+            // Back hip triangle (corners 3, 2, ridgeEnd)
+            this._addTriangle(group,
+                { x: corners[3].x, y: roofBase, z: corners[3].z },
+                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
+                { x: corners[2].x, y: roofBase, z: corners[2].z },
+                roofMat);
+
+        } else if (roofType === 'shed') {
+            // Single slope: one side stays at roofBase, opposite rises
+            const corners = this._obbCorners(obb);
+            const shedHeight = obb.halfH * 2 * Math.tan(pitchRad);
+            const highY = roofBase + shedHeight;
+
+            // Low edge: corners 0,3 (left side), High edge: corners 1,2 (right side)
+            // Two triangles forming a sloped quad
+            this._addTriangle(group,
+                { x: corners[0].x, y: roofBase, z: corners[0].z },
+                { x: corners[1].x, y: highY, z: corners[1].z },
+                { x: corners[2].x, y: highY, z: corners[2].z },
+                roofMat);
+            this._addTriangle(group,
+                { x: corners[0].x, y: roofBase, z: corners[0].z },
+                { x: corners[2].x, y: highY, z: corners[2].z },
+                { x: corners[3].x, y: roofBase, z: corners[3].z },
+                roofMat);
+
+            // Triangular walls on front and back ends
+            this._addTriangle(group,
+                { x: corners[0].x, y: roofBase, z: corners[0].z },
+                { x: corners[1].x, y: roofBase, z: corners[1].z },
+                { x: corners[1].x, y: highY, z: corners[1].z },
+                wallMat);
+            this._addTriangle(group,
+                { x: corners[3].x, y: roofBase, z: corners[3].z },
+                { x: corners[2].x, y: highY, z: corners[2].z },
+                { x: corners[2].x, y: roofBase, z: corners[2].z },
+                wallMat);
+        }
+
+        return group;
+    },
+
+    /**
+     * Compute oriented bounding box of local footprint points.
+     * Returns {center, halfW, halfH, angle, axisU, axisV}
+     * axisU = along longer axis, axisV = along shorter axis
+     */
+    _computeOBB(pts) {
+        const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+        const cz = pts.reduce((s, p) => s + p.z, 0) / pts.length;
+
+        let bestAngle = 0, bestArea = Infinity, bestW = 0, bestH = 0;
+        for (let i = 0; i < pts.length; i++) {
+            const j = (i + 1) % pts.length;
+            const edx = pts[j].x - pts[i].x;
+            const edz = pts[j].z - pts[i].z;
+            const angle = Math.atan2(edz, edx);
+            const cosA = Math.cos(-angle), sinA = Math.sin(-angle);
+            let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+            for (const p of pts) {
+                const px = p.x - cx, pz = p.z - cz;
+                const rx = px * cosA - pz * sinA;
+                const rz = px * sinA + pz * cosA;
+                if (rx < minX) minX = rx; if (rx > maxX) maxX = rx;
+                if (rz < minZ) minZ = rz; if (rz > maxZ) maxZ = rz;
+            }
+            const area = (maxX - minX) * (maxZ - minZ);
+            if (area < bestArea) {
+                bestArea = area;
+                bestAngle = angle;
+                bestW = (maxX - minX) / 2;
+                bestH = (maxZ - minZ) / 2;
+            }
+        }
+
+        // Ensure W is the longer dimension (ridge runs along W)
+        let axisU = { x: Math.cos(bestAngle), z: Math.sin(bestAngle) };
+        let axisV = { x: -Math.sin(bestAngle), z: Math.cos(bestAngle) };
+        let halfW = bestW, halfH = bestH;
+
+        if (halfH > halfW) {
+            // Swap so U is always the longer axis
+            [halfW, halfH] = [halfH, halfW];
+            [axisU, axisV] = [axisV, { x: -axisV.x, z: -axisV.z }];
+        }
+
+        return { center: { x: cx, z: cz }, halfW, halfH, axisU, axisV };
+    },
+
+    /**
+     * Get 4 corners of the OBB.
+     * Returns [front-left, front-right, back-right, back-left]
+     * where front = -axisU end, left = -axisV side
+     */
+    _obbCorners(obb) {
+        const { center, halfW, halfH, axisU, axisV } = obb;
+        return [
+            { x: center.x - axisU.x * halfW - axisV.x * halfH, z: center.z - axisU.z * halfW - axisV.z * halfH },
+            { x: center.x - axisU.x * halfW + axisV.x * halfH, z: center.z - axisU.z * halfW + axisV.z * halfH },
+            { x: center.x + axisU.x * halfW + axisV.x * halfH, z: center.z + axisU.z * halfW + axisV.z * halfH },
+            { x: center.x + axisU.x * halfW - axisV.x * halfH, z: center.z + axisU.z * halfW - axisV.z * halfH },
+        ];
+    },
+
+    /**
+     * Add a single triangle (2 faces for DoubleSide) to a group.
+     */
+    _addTriangle(group, a, b, c, material) {
+        const geom = new THREE.BufferGeometry();
+        const vertices = new Float32Array([
+            a.x, a.y, a.z,
+            b.x, b.y, b.z,
+            c.x, c.y, c.z
+        ]);
+        geom.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+        geom.computeVertexNormals();
+        group.add(new THREE.Mesh(geom, material));
     },
 
     /**
