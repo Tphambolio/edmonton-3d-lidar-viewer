@@ -703,10 +703,24 @@ function setupBuildingToolUI() {
     // Enable generate button when BuildingGenerator is ready
     window.addEventListener('building-generator-ready', () => {
         console.log('BuildingGenerator ready');
-        if (BuildingTool.mode === 'configuring') {
-            generateBtn.disabled = false;
-        }
+        generateBtn.disabled = false;
+        generateBtn.title = '';
     });
+
+    // Check periodically in case the event was missed or module is loading slowly
+    const checkGeneratorReady = () => {
+        if (window.BuildingGenerator) {
+            generateBtn.title = '';
+            return;
+        }
+        if (window._buildingGeneratorError) {
+            generateBtn.title = 'Three.js failed to load: ' + window._buildingGeneratorError;
+            console.error('BuildingGenerator load error:', window._buildingGeneratorError);
+            return;
+        }
+        setTimeout(checkGeneratorReady, 2000);
+    };
+    setTimeout(checkGeneratorReady, 3000);
 
     generateBtn.addEventListener('click', async () => {
         if (!window.BuildingGenerator) {
@@ -834,7 +848,12 @@ function setupBuildingToolUI() {
             document.getElementById('customArea').textContent = dims.area + ' m²';
 
             // Enable generate button if BuildingGenerator is loaded
-            generateBtn.disabled = !window.BuildingGenerator;
+            if (window.BuildingGenerator) {
+                generateBtn.disabled = false;
+            } else {
+                generateBtn.disabled = true;
+                generateBtn.title = 'Loading 3D generator...';
+            }
 
             // Update floor tabs and wall tabs
             updateFloorTabs();

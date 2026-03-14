@@ -6,8 +6,17 @@
  *
  * ES Module — loaded via importmap.
  */
-import * as THREE from 'three';
-import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+let THREE, GLTFExporter;
+try {
+    THREE = await import('three');
+    const exporter = await import('three/addons/exporters/GLTFExporter.js');
+    GLTFExporter = exporter.GLTFExporter;
+} catch (e) {
+    console.error('Failed to load Three.js modules:', e);
+    // Surface the error to the UI
+    window._buildingGeneratorError = e.message;
+    throw e;
+}
 
 const BuildingGenerator = {
 
@@ -530,3 +539,4 @@ const BuildingGenerator = {
 // Expose globally for non-module scripts
 window.BuildingGenerator = BuildingGenerator;
 window.dispatchEvent(new Event('building-generator-ready'));
+console.log('BuildingGenerator module loaded successfully (Three.js r' + THREE.REVISION + ')');
