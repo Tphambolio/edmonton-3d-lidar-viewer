@@ -556,6 +556,260 @@ function setupBuildingToolUI() {
         BuildingTool.resetFootprint();
     });
 
+    // ——— Advanced config: Windows & Doors ———
+
+    // Toggle advanced panel
+    const advancedToggle = document.getElementById('advancedToggle');
+    const advancedConfig = document.getElementById('advancedConfig');
+    advancedToggle.addEventListener('click', () => {
+        advancedToggle.classList.toggle('open');
+        advancedConfig.classList.toggle('hidden');
+    });
+
+    // Slider value display helpers
+    const sliderDisplay = (sliderId, displayId, suffix) => {
+        const slider = document.getElementById(sliderId);
+        const display = document.getElementById(displayId);
+        slider.addEventListener('input', () => {
+            display.textContent = slider.value + suffix;
+        });
+    };
+    sliderDisplay('winWidthSlider', 'winWidthVal', 'm');
+    sliderDisplay('winHeightSlider', 'winHeightVal', 'm');
+    sliderDisplay('winSillSlider', 'winSillVal', 'm');
+    sliderDisplay('doorWidthSlider', 'doorWidthVal', 'm');
+    sliderDisplay('doorHeightSlider', 'doorHeightVal', 'm');
+    sliderDisplay('parapetHeightSlider', 'parapetHeightVal', 'm');
+
+    // Window offset slider
+    const winOffsetSlider = document.getElementById('winOffsetSlider');
+    const winOffsetVal = document.getElementById('winOffsetVal');
+    winOffsetSlider.addEventListener('input', () => {
+        winOffsetVal.textContent = parseFloat(winOffsetSlider.value).toFixed(1) + 'm';
+    });
+
+    // Window count slider (0 = auto)
+    const winCountSlider = document.getElementById('winCountSlider');
+    const winCountVal = document.getElementById('winCountVal');
+    winCountSlider.addEventListener('input', () => {
+        winCountVal.textContent = winCountSlider.value === '0' ? 'auto' : winCountSlider.value;
+    });
+
+    // Door wall slider
+    const doorWallSlider = document.getElementById('doorWallSlider');
+    const doorWallVal = document.getElementById('doorWallVal');
+    doorWallSlider.addEventListener('input', () => {
+        doorWallVal.textContent = parseInt(doorWallSlider.value) + 1;
+    });
+
+    // Door position slider
+    const doorPosSlider = document.getElementById('doorPosSlider');
+    const doorPosVal = document.getElementById('doorPosVal');
+    doorPosSlider.addEventListener('input', () => {
+        doorPosVal.textContent = doorPosSlider.value + '%';
+    });
+
+    // Floor tabs — dynamically generated based on storey count
+    const updateFloorTabs = () => {
+        const storeys = Math.round(parseFloat(heightSlider.value) / 3.5);
+        const floorTabs = document.getElementById('floorTabs');
+        floorTabs.innerHTML = '<button class="floor-tab active" data-floor="all">All</button>';
+        for (let i = 0; i < Math.min(storeys, 20); i++) {
+            const btn = document.createElement('button');
+            btn.className = 'floor-tab';
+            btn.dataset.floor = i;
+            btn.textContent = i + 1;
+            floorTabs.appendChild(btn);
+        }
+        // Update door wall slider max based on footprint points
+        if (BuildingTool._points.length > 0) {
+            doorWallSlider.max = BuildingTool._points.length - 1;
+        }
+        setupFloorTabListeners();
+        setupWallTabs();
+    };
+
+    heightSlider.addEventListener('change', updateFloorTabs);
+
+    // Track current floor/wall selection for per-floor/wall config
+    window._currentFloor = 'all';
+    window._currentWall = 'all';
+    window._floorConfigs = {}; // keyed by "floor:wall"
+
+    const setupFloorTabListeners = () => {
+        document.querySelectorAll('.floor-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.floor-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                window._currentFloor = tab.dataset.floor;
+                loadConfigForSelection();
+            });
+        });
+    };
+
+    const setupWallTabs = () => {
+        const wallTabs = document.getElementById('wallTabs');
+        wallTabs.innerHTML = '<button class="wall-tab active" data-wall="all">All</button>';
+        const numWalls = BuildingTool._points.length || 4;
+        for (let i = 0; i < numWalls; i++) {
+            const btn = document.createElement('button');
+            btn.className = 'wall-tab';
+            btn.dataset.wall = i;
+            btn.textContent = i + 1;
+            wallTabs.appendChild(btn);
+        }
+        document.querySelectorAll('.wall-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.wall-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                window._currentWall = tab.dataset.wall;
+                loadConfigForSelection();
+            });
+        });
+    };
+
+    // Save current slider values to the current floor:wall config
+    const saveConfigForSelection = () => {
+        const key = `${window._currentFloor}:${window._currentWall}`;
+        window._floorConfigs[key] = {
+            count: parseInt(winCountSlider.value),
+            width: parseFloat(document.getElementById('winWidthSlider').value),
+            height: parseFloat(document.getElementById('winHeightSlider').value),
+            sillHeight: parseFloat(document.getElementById('winSillSlider').value),
+            offset: parseFloat(winOffsetSlider.value)
+        };
+    };
+
+    // Load config for the selected floor:wall into sliders
+    const loadConfigForSelection = () => {
+        const key = `${window._currentFloor}:${window._currentWall}`;
+        const cfg = window._floorConfigs[key] || window._floorConfigs['all:all'] || {};
+        if (cfg.count !== undefined) { winCountSlider.value = cfg.count; winCountVal.textContent = cfg.count === 0 ? 'auto' : cfg.count; }
+        if (cfg.width !== undefined) { document.getElementById('winWidthSlider').value = cfg.width; document.getElementById('winWidthVal').textContent = cfg.width + 'm'; }
+        if (cfg.height !== undefined) { document.getElementById('winHeightSlider').value = cfg.height; document.getElementById('winHeightVal').textContent = cfg.height + 'm'; }
+        if (cfg.sillHeight !== undefined) { document.getElementById('winSillSlider').value = cfg.sillHeight; document.getElementById('winSillVal').textContent = cfg.sillHeight + 'm'; }
+        if (cfg.offset !== undefined) { winOffsetSlider.value = cfg.offset; winOffsetVal.textContent = parseFloat(cfg.offset).toFixed(1) + 'm'; }
+    };
+
+    // Auto-save when any window slider changes
+    [winCountSlider, document.getElementById('winWidthSlider'), document.getElementById('winHeightSlider'),
+     document.getElementById('winSillSlider'), winOffsetSlider].forEach(slider => {
+        slider.addEventListener('change', saveConfigForSelection);
+    });
+
+    // Generate 3D Model button
+    const generateBtn = document.getElementById('generateModelBtn');
+
+    // Enable generate button when BuildingGenerator is ready
+    window.addEventListener('building-generator-ready', () => {
+        console.log('BuildingGenerator ready');
+        if (BuildingTool.mode === 'configuring') {
+            generateBtn.disabled = false;
+        }
+    });
+
+    generateBtn.addEventListener('click', async () => {
+        if (!window.BuildingGenerator) {
+            setStatus('3D generator still loading...');
+            return;
+        }
+        if (BuildingTool._points.length < 3) {
+            setStatus('Draw a footprint first');
+            return;
+        }
+
+        generateBtn.disabled = true;
+        generateBtn.textContent = 'Generating...';
+        setStatus('Generating 3D building model...');
+
+        try {
+            // Save current config before generating
+            saveConfigForSelection();
+
+            // Ensure all:all has defaults if not set
+            if (!window._floorConfigs['all:all']) {
+                window._floorConfigs['all:all'] = {
+                    count: parseInt(winCountSlider.value),
+                    width: parseFloat(document.getElementById('winWidthSlider').value),
+                    height: parseFloat(document.getElementById('winHeightSlider').value),
+                    sillHeight: parseFloat(document.getElementById('winSillSlider').value),
+                    offset: parseFloat(winOffsetSlider.value)
+                };
+            }
+
+            const height = parseFloat(heightSlider.value);
+            const storeys = Math.round(height / 3.5);
+            const floorHeight = height / storeys;
+
+            const addDoor = document.getElementById('addDoorChk').checked;
+            const door = addDoor ? {
+                width: parseFloat(document.getElementById('doorWidthSlider').value),
+                height: parseFloat(document.getElementById('doorHeightSlider').value),
+                wallIndex: parseInt(doorWallSlider.value),
+                position: parseInt(doorPosSlider.value) / 100
+            } : null;
+
+            const config = {
+                footprint: BuildingTool._points.map(p => ({ lat: p.lat, lng: p.lng })),
+                numFloors: storeys,
+                floorHeight: floorHeight,
+                colors: {
+                    wall: colorPicker.value,
+                    glass: document.getElementById('glassColorPicker').value,
+                    frame: document.getElementById('frameColorPicker').value
+                },
+                floorConfigs: { ...window._floorConfigs },
+                door: door,
+                parapet: document.getElementById('addParapetChk').checked,
+                parapetHeight: parseFloat(document.getElementById('parapetHeightSlider').value)
+            };
+
+            const glbUrl = await window.BuildingGenerator.generate(config);
+
+            // Create the building entity first (flat extrusion for metadata/selection)
+            const building = await BuildingTool.createBuilding({
+                height, color: colorPicker.value, storeys
+            });
+
+            if (building) {
+                // Replace flat extrusion with the generated 3D model
+                building.entity.show = false;
+                building.glbUrl = glbUrl;
+
+                // Place GLB at the building's centroid
+                const centLat = building.footprint.reduce((s, p) => s + p.lat, 0) / building.footprint.length;
+                const centLng = building.footprint.reduce((s, p) => s + p.lng, 0) / building.footprint.length;
+                const terrainH = await Buildings.getTerrainHeight(viewer, centLat, centLng);
+
+                const position = Cesium.Cartesian3.fromDegrees(centLng, centLat, terrainH);
+                const hpr = new Cesium.HeadingPitchRoll(0, 0, 0);
+                const orientation = Cesium.Transforms.headingPitchRollQuaternion(position, hpr);
+
+                const modelEntity = viewer.entities.add({
+                    name: building.id + '_model',
+                    position: position,
+                    orientation: orientation,
+                    model: {
+                        uri: glbUrl,
+                        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                        scale: 1.0
+                    }
+                });
+                building.modelEntity = modelEntity;
+
+                setStatus(`Created 3D building (${building.width}m × ${building.depth}m, ${storeys} floors)`);
+            }
+        } catch (e) {
+            setStatus('Error generating model: ' + e.message);
+            console.error('Generate error:', e);
+        }
+
+        generateBtn.disabled = false;
+        generateBtn.textContent = 'Generate 3D Model';
+        updateStats();
+        updateBuildingList();
+    });
+
     // Listen for BuildingTool state changes
     BuildingTool.onUpdate = (mode, pointCount) => {
         const idleDiv = document.getElementById('buildToolIdle');
@@ -578,6 +832,21 @@ function setupBuildingToolUI() {
             document.getElementById('customWidth').textContent = dims.width + 'm';
             document.getElementById('customDepth').textContent = dims.depth + 'm';
             document.getElementById('customArea').textContent = dims.area + ' m²';
+
+            // Enable generate button if BuildingGenerator is loaded
+            generateBtn.disabled = !window.BuildingGenerator;
+
+            // Update floor tabs and wall tabs
+            updateFloorTabs();
+
+            // Reset floor configs for new building
+            window._floorConfigs = {};
+            window._currentFloor = 'all';
+            window._currentWall = 'all';
+        }
+
+        if (mode === 'idle') {
+            generateBtn.disabled = true;
         }
 
         updateBuildingList();
