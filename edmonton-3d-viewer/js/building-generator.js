@@ -490,164 +490,124 @@ const BuildingGenerator = {
      * Build a pitched roof on the footprint.
      * Uses the oriented bounding box to determine ridge direction.
      */
+    /**
+     * Build a roof using vertex projection — works for any polygon shape.
+     * Projects each footprint vertex onto OBB axes to compute roof heights,
+     * splits the polygon along the ridge, and triangulates each half.
+     */
     _buildRoof(localPts, roofBase, roofType, pitchDeg, roofMat, wallMat) {
         const group = new THREE.Group();
         const pitchRad = pitchDeg * Math.PI / 180;
-
-        // Compute oriented bounding box (for ridge direction only)
         const obb = this._computeOBB(localPts);
-
-        // Snap OBB corners to nearest actual footprint vertices
-        // so the roof edges align with the walls instead of overhanging
-        const obbCorners = this._obbCorners(obb);
-        const corners = obbCorners.map(c => {
-            let best = localPts[0], bestDist = Infinity;
-            for (const p of localPts) {
-                const d = (p.x - c.x) ** 2 + (p.z - c.z) ** 2;
-                if (d < bestDist) { bestDist = d; best = p; }
-            }
-            return { x: best.x, z: best.z };
-        });
-
         const ridgeHeight = obb.halfH * Math.tan(pitchRad);
 
-        if (roofType === 'gable') {
-            const ridgeStart = {
-                x: obb.center.x - obb.axisU.x * obb.halfW,
-                z: obb.center.z - obb.axisU.z * obb.halfW
+        // Project each footprint vertex onto OBB axes
+        const pts = localPts.map(p => ({
+            x: p.x, z: p.z,
+            u: (p.x - obb.center.x) * obb.axisU.x + (p.z - obb.center.z) * obb.axisU.z,
+            v: (p.x - obb.center.x) * obb.axisV.x + (p.z - obb.center.z) * obb.axisV.z
+        }));
+
+        const ridgeInset = (roofType === 'hip')
+            ? Math.min(obb.halfH, obb.halfW * 0.8) : 0;
+
+        // Height function based on roof type
+        const roofH = (u, v) => {
+            if (roofType === 'shed') {
+                // Linear slope from -halfH (low) to +halfH (high)
+                const shedHeight = 2 * obb.halfH * Math.tan(pitchRad);
+                return roofBase + shedHeight * (v + obb.halfH) / (2 * obb.halfH);
+            }
+            // Lateral slope (gable & hip)
+            let h = 1 - Math.abs(v) / obb.halfH;
+            if (roofType === 'hip' && ridgeInset > 0) {
+                // Also slope from ends inward
+                const minU = -obb.halfW, maxU = obb.halfW;
+                const frontSlope = (u - minU) / ridgeInset;
+                const backSlope = (maxU - u) / ridgeInset;
+                h = Math.min(h, frontSlope, backSlope);
+            }
+            return roofBase + ridgeHeight * Math.max(0, h);
+        };
+
+        if (roofType === 'shed') {
+            // Shed: each footprint vertex gets its slope height, triangulate as fan
+            const roofPts = pts.map(p => ({ x: p.x, y: roofH(p.u, p.v), z: p.z }));
+            for (let i = 1; i < roofPts.length - 1; i++) {
+                this._addTriangle(group, roofPts[0], roofPts[i], roofPts[i + 1], roofMat);
+            }
+            // Shed end walls (where height differs along edges)
+            for (let i = 0; i < pts.length; i++) {
+                const curr = pts[i], next = pts[(i + 1) % pts.length];
+                const hCurr = roofH(curr.u, curr.v), hNext = roofH(next.u, next.v);
+                if (Math.abs(hCurr - hNext) > 0.1) {
+                    // Triangular wall fill
+                    const higher = hCurr > hNext ? curr : next;
+                    const lower = hCurr > hNext ? next : curr;
+                    const hHigh = Math.max(hCurr, hNext);
+                    this._addTriangle(group,
+                        { x: higher.x, y: roofBase, z: higher.z },
+                        { x: lower.x, y: roofBase, z: lower.z },
+                        { x: higher.x, y: hHigh, z: higher.z },
+                        wallMat);
+                }
+            }
+        } else {
+            // Gable & Hip: split polygon along ridge line (v=0) into two halves
+            const leftHalf = [];  // v <= 0
+            const rightHalf = []; // v >= 0
+
+            for (let i = 0; i < pts.length; i++) {
+                const curr = pts[i];
+                const next = pts[(i + 1) % pts.length];
+
+                if (curr.v <= 0) leftHalf.push(curr);
+                if (curr.v >= 0) rightHalf.push(curr);
+
+                // Edge crosses ridge (v=0)
+                if ((curr.v < 0 && next.v > 0) || (curr.v > 0 && next.v < 0)) {
+                    const t = curr.v / (curr.v - next.v);
+                    const cross = {
+                        x: curr.x + t * (next.x - curr.x),
+                        z: curr.z + t * (next.z - curr.z),
+                        u: curr.u + t * (next.u - curr.u),
+                        v: 0
+                    };
+                    leftHalf.push(cross);
+                    rightHalf.push(cross);
+                }
+            }
+
+            // Triangulate each half with elevated vertices
+            const triHalf = (half) => {
+                if (half.length < 3) return;
+                const elevated = half.map(p => ({ x: p.x, y: roofH(p.u, p.v), z: p.z }));
+                for (let i = 1; i < elevated.length - 1; i++) {
+                    this._addTriangle(group, elevated[0], elevated[i], elevated[i + 1], roofMat);
+                }
             };
-            const ridgeEnd = {
-                x: obb.center.x + obb.axisU.x * obb.halfW,
-                z: obb.center.z + obb.axisU.z * obb.halfW
-            };
+            triHalf(leftHalf);
+            triHalf(rightHalf);
 
-            const ry = roofBase + ridgeHeight;
-
-            // Left slope (corners 0,3 at eave, ridge above)
-            this._addTriangle(group,
-                { x: corners[0].x, y: roofBase, z: corners[0].z },
-                { x: ridgeStart.x, y: ry, z: ridgeStart.z },
-                { x: corners[3].x, y: roofBase, z: corners[3].z },
-                roofMat);
-            this._addTriangle(group,
-                { x: corners[3].x, y: roofBase, z: corners[3].z },
-                { x: ridgeStart.x, y: ry, z: ridgeStart.z },
-                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
-                roofMat);
-            this._addTriangle(group,
-                { x: corners[3].x, y: roofBase, z: corners[3].z },
-                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
-                { x: corners[0].x, y: roofBase, z: corners[0].z },
-                roofMat);
-
-            // Right slope (corners 1,2 at eave, ridge above)
-            this._addTriangle(group,
-                { x: corners[1].x, y: roofBase, z: corners[1].z },
-                { x: corners[2].x, y: roofBase, z: corners[2].z },
-                { x: ridgeStart.x, y: ry, z: ridgeStart.z },
-                roofMat);
-            this._addTriangle(group,
-                { x: corners[2].x, y: roofBase, z: corners[2].z },
-                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
-                { x: ridgeStart.x, y: ry, z: ridgeStart.z },
-                roofMat);
-            this._addTriangle(group,
-                { x: corners[2].x, y: roofBase, z: corners[2].z },
-                { x: corners[1].x, y: roofBase, z: corners[1].z },
-                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
-                roofMat);
-
-            // Gable wall triangles
-            this._addTriangle(group,
-                { x: corners[0].x, y: roofBase, z: corners[0].z },
-                { x: corners[1].x, y: roofBase, z: corners[1].z },
-                { x: ridgeStart.x, y: ry, z: ridgeStart.z },
-                wallMat);
-            this._addTriangle(group,
-                { x: corners[3].x, y: roofBase, z: corners[3].z },
-                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
-                { x: corners[2].x, y: roofBase, z: corners[2].z },
-                wallMat);
-
-        } else if (roofType === 'hip') {
-            const ry = roofBase + ridgeHeight;
-
-            // Ridge inset from ends
-            const ridgeInset = Math.min(obb.halfH, obb.halfW * 0.8);
-            const ridgeStart = {
-                x: obb.center.x - obb.axisU.x * (obb.halfW - ridgeInset),
-                z: obb.center.z - obb.axisU.z * (obb.halfW - ridgeInset)
-            };
-            const ridgeEnd = {
-                x: obb.center.x + obb.axisU.x * (obb.halfW - ridgeInset),
-                z: obb.center.z + obb.axisU.z * (obb.halfW - ridgeInset)
-            };
-
-            // Left slope
-            this._addTriangle(group,
-                { x: corners[0].x, y: roofBase, z: corners[0].z },
-                { x: ridgeStart.x, y: ry, z: ridgeStart.z },
-                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
-                roofMat);
-            this._addTriangle(group,
-                { x: corners[0].x, y: roofBase, z: corners[0].z },
-                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
-                { x: corners[3].x, y: roofBase, z: corners[3].z },
-                roofMat);
-
-            // Right slope
-            this._addTriangle(group,
-                { x: corners[1].x, y: roofBase, z: corners[1].z },
-                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
-                { x: ridgeStart.x, y: ry, z: ridgeStart.z },
-                roofMat);
-            this._addTriangle(group,
-                { x: corners[1].x, y: roofBase, z: corners[1].z },
-                { x: corners[2].x, y: roofBase, z: corners[2].z },
-                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
-                roofMat);
-
-            // Front hip triangle
-            this._addTriangle(group,
-                { x: corners[0].x, y: roofBase, z: corners[0].z },
-                { x: corners[1].x, y: roofBase, z: corners[1].z },
-                { x: ridgeStart.x, y: ry, z: ridgeStart.z },
-                roofMat);
-
-            // Back hip triangle
-            this._addTriangle(group,
-                { x: corners[3].x, y: roofBase, z: corners[3].z },
-                { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
-                { x: corners[2].x, y: roofBase, z: corners[2].z },
-                roofMat);
-
-        } else if (roofType === 'shed') {
-            const shedHeight = obb.halfH * 2 * Math.tan(pitchRad);
-            const highY = roofBase + shedHeight;
-
-            // Low edge: corners 0,3, High edge: corners 1,2
-            this._addTriangle(group,
-                { x: corners[0].x, y: roofBase, z: corners[0].z },
-                { x: corners[1].x, y: highY, z: corners[1].z },
-                { x: corners[2].x, y: highY, z: corners[2].z },
-                roofMat);
-            this._addTriangle(group,
-                { x: corners[0].x, y: roofBase, z: corners[0].z },
-                { x: corners[2].x, y: highY, z: corners[2].z },
-                { x: corners[3].x, y: roofBase, z: corners[3].z },
-                roofMat);
-
-            // Triangular walls on front and back ends
-            this._addTriangle(group,
-                { x: corners[0].x, y: roofBase, z: corners[0].z },
-                { x: corners[1].x, y: roofBase, z: corners[1].z },
-                { x: corners[1].x, y: highY, z: corners[1].z },
-                wallMat);
-            this._addTriangle(group,
-                { x: corners[3].x, y: roofBase, z: corners[3].z },
-                { x: corners[2].x, y: highY, z: corners[2].z },
-                { x: corners[2].x, y: roofBase, z: corners[2].z },
-                wallMat);
+            // Gable end walls: vertical triangles where footprint edges cross v=0
+            if (roofType === 'gable') {
+                for (let i = 0; i < pts.length; i++) {
+                    const curr = pts[i], next = pts[(i + 1) % pts.length];
+                    if ((curr.v < 0 && next.v > 0) || (curr.v > 0 && next.v < 0)) {
+                        const t = curr.v / (curr.v - next.v);
+                        const ridgePt = {
+                            x: curr.x + t * (next.x - curr.x),
+                            z: curr.z + t * (next.z - curr.z),
+                            u: curr.u + t * (next.u - curr.u)
+                        };
+                        this._addTriangle(group,
+                            { x: curr.x, y: roofBase, z: curr.z },
+                            { x: next.x, y: roofBase, z: next.z },
+                            { x: ridgePt.x, y: roofBase + ridgeHeight, z: ridgePt.z },
+                            wallMat);
+                    }
+                }
+            }
         }
 
         return group;
@@ -663,6 +623,7 @@ const BuildingGenerator = {
         const cz = pts.reduce((s, p) => s + p.z, 0) / pts.length;
 
         let bestAngle = 0, bestArea = Infinity, bestW = 0, bestH = 0;
+        let bestMidX = 0, bestMidZ = 0; // BB center offset from centroid in rotated space
         for (let i = 0; i < pts.length; i++) {
             const j = (i + 1) % pts.length;
             const edx = pts[j].x - pts[i].x;
@@ -683,12 +644,18 @@ const BuildingGenerator = {
                 bestAngle = angle;
                 bestW = (maxX - minX) / 2;
                 bestH = (maxZ - minZ) / 2;
+                bestMidX = (minX + maxX) / 2;
+                bestMidZ = (minZ + maxZ) / 2;
             }
         }
 
-        // Ensure W is the longer dimension (ridge runs along W)
+        // Compute proper BB center (may differ from centroid for asymmetric shapes)
         let axisU = { x: Math.cos(bestAngle), z: Math.sin(bestAngle) };
         let axisV = { x: -Math.sin(bestAngle), z: Math.cos(bestAngle) };
+        // Transform BB center offset from rotated space back to local space
+        const bbCenterX = cx + bestMidX * axisU.x + bestMidZ * axisV.x;
+        const bbCenterZ = cz + bestMidX * axisU.z + bestMidZ * axisV.z;
+
         let halfW = bestW, halfH = bestH;
 
         if (halfH > halfW) {
@@ -697,7 +664,7 @@ const BuildingGenerator = {
             [axisU, axisV] = [axisV, { x: -axisU.x, z: -axisU.z }];
         }
 
-        return { center: { x: cx, z: cz }, halfW, halfH, axisU, axisV };
+        return { center: { x: bbCenterX, z: bbCenterZ }, halfW, halfH, axisU, axisV };
     },
 
     /**
