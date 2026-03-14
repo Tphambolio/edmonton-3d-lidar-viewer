@@ -379,13 +379,20 @@ const BuildingTool = {
     },
 
     /**
-     * Delete a custom building.
+     * Delete a custom building (and its 3D model entity if present).
      */
     deleteBuilding(id) {
         const idx = this.buildings.findIndex(b => b.id === id);
         if (idx === -1) return;
 
-        this._viewer.entities.remove(this.buildings[idx].entity);
+        const building = this.buildings[idx];
+        this._viewer.entities.remove(building.entity);
+        if (building.modelEntity) {
+            this._viewer.entities.remove(building.modelEntity);
+        }
+        if (building.glbUrl) {
+            URL.revokeObjectURL(building.glbUrl);
+        }
         this.buildings.splice(idx, 1);
         this._fireUpdate();
     },

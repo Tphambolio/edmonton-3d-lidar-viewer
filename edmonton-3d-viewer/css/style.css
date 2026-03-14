@@ -416,3 +416,105 @@ html, body, #cesiumContainer { width: 100%; height: 100%; overflow: hidden; }
     padding: 0 4px;
 }
 .custom-building-item .delete-btn:hover { color: #e55; }
+
+/* Advanced Config Toggle */
+.advanced-toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 8px;
+    margin: 8px 0;
+    background: rgba(255,255,255,0.05);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #bbb;
+    user-select: none;
+}
+.advanced-toggle:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.advanced-toggle .toggle-arrow { font-size: 10px; transition: transform 0.2s; }
+.advanced-toggle.open .toggle-arrow { transform: rotate(90deg); }
+
+/* Floor & Wall Tabs */
+.floor-selector, .wall-selector {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.floor-label, .wall-label {
+    font-size: 11px;
+    color: #888;
+    min-width: 32px;
+}
+.floor-tabs, .wall-tabs {
+    display: flex;
+    gap: 2px;
+    flex-wrap: wrap;
+}
+.floor-tab, .wall-tab {
+    padding: 3px 7px;
+    border: 1px solid #555;
+    border-radius: 3px;
+    background: #2a2a35;
+    color: #aaa;
+    cursor: pointer;
+    font-size: 10px;
+    min-width: 24px;
+    text-align: center;
+}
+.floor-tab:hover, .wall-tab:hover { background: #3a3a45; border-color: #777; }
+.floor-tab.active, .wall-tab.active {
+    background: #4a90d9;
+    border-color: #4a90d9;
+    color: white;
+    font-weight: 600;
+}
+
+/* Config Groups */
+.config-group {
+    margin-bottom: 8px;
+    padding: 6px;
+    background: rgba(0,0,0,0.15);
+    border-radius: 4px;
+}
+.config-group-title {
+    font-size: 11px;
+    color: #999;
+    margin-bottom: 6px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.config-group-title label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: #999;
+    cursor: pointer;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.config-group .config-label {
+    margin-bottom: 4px;
+}
+
+/* Generate button */
+.btn-generate {
+    flex: 2;
+    padding: 8px;
+    border: none;
+    border-radius: 4px;
+    background: #e76f51;
+    color: white;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+}
+.btn-generate:hover:not(:disabled) { background: #f4845f; }
+.btn-generate:disabled { background: #555; cursor: default; color: #999; }
+.btn-create {
+    font-size: 11px;
+    padding: 8px 6px;
+}
