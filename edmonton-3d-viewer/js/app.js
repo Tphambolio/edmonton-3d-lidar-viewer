@@ -73,8 +73,12 @@ async function init() {
     await Buildings.loadIndex();
     await Trees.loadIndex();
 
+    // Initialize custom building tool
+    BuildingTool.init(viewer);
+
     // Wire up UI
     setupUI();
+    setupBuildingToolUI();
     updateStats();
 }
 
@@ -128,12 +132,20 @@ function setupUI() {
     // Building click handler
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
     handler.setInputAction((click) => {
+        // Don't intercept clicks when BuildingTool is drawing
+        if (BuildingTool.mode === 'drawing') return;
+
         const picked = viewer.scene.pick(click.position);
         console.log('Picked:', picked);
         if (Cesium.defined(picked)) {
             // Entity pick (buildings)
             if (picked.id && picked.id.name?.startsWith('bldg_')) {
                 selectBuilding(picked.id);
+                return;
+            }
+            // Custom building pick
+            if (picked.id && picked.id.name?.startsWith('custom_build_')) {
+                selectCustomBuilding(picked.id);
                 return;
             }
             // 3D Tileset pick (trees) — ignore, don't deselect
@@ -143,6 +155,7 @@ function setupUI() {
             }
         }
         selectBuilding(null);
+        selectCustomBuilding(null);
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
     // Populate model dropdown from catalog
@@ -440,6 +453,209 @@ async function handleModelFile(file) {
     updateStats();
 }
 
+// ——— Custom Building Tool UI ———
+
+let selectedCustomBuilding = null;
+
+function setupBuildingToolUI() {
+    const drawBtn = document.getElementById('drawBuildingBtn');
+    const cancelBtn = document.getElementById('cancelDrawBtn');
+    const undoBtn = document.getElementById('undoPointBtn');
+    const doneBtn = document.getElementById('doneDrawBtn');
+    const createBtn = document.getElementById('createBuildingBtn');
+    const resetBtn = document.getElementById('resetFootprintBtn');
+    const heightSlider = document.getElementById('buildHeightSlider');
+    const heightValue = document.getElementById('heightValue');
+    const colorPicker = document.getElementById('buildColorPicker');
+
+    // Draw button — activate drawing mode
+    drawBtn.addEventListener('click', () => {
+        BuildingTool.activate();
+    });
+
+    // Cancel drawing
+    cancelBtn.addEventListener('click', () => {
+        BuildingTool.cancel();
+    });
+
+    // Undo last point
+    undoBtn.addEventListener('click', () => {
+        BuildingTool.undoPoint();
+    });
+
+    // Done drawing
+    doneBtn.addEventListener('click', () => {
+        BuildingTool.completeFootprint();
+    });
+
+    // Height slider
+    heightSlider.addEventListener('input', () => {
+        const h = parseFloat(heightSlider.value);
+        heightValue.textContent = h + 'm';
+
+        // Update storey button highlights
+        const storeys = Math.round(h / 3.5);
+        document.querySelectorAll('.storey-btn').forEach(btn => {
+            const s = parseInt(btn.dataset.storeys);
+            btn.classList.toggle('active', s === storeys || (s === 6 && storeys >= 6));
+        });
+
+        // Live-update if editing an existing custom building
+        if (selectedCustomBuilding) {
+            BuildingTool.updateBuilding(selectedCustomBuilding.id, { height: h, storeys: Math.round(h / 3.5) });
+        }
+    });
+
+    // Storey quick-select buttons
+    document.querySelectorAll('.storey-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const storeys = parseInt(btn.dataset.storeys);
+            const height = storeys * 3.5;
+            heightSlider.value = height;
+            heightValue.textContent = height + 'm';
+            document.querySelectorAll('.storey-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            if (selectedCustomBuilding) {
+                BuildingTool.updateBuilding(selectedCustomBuilding.id, { height, storeys });
+            }
+        });
+    });
+
+    // Color picker
+    colorPicker.addEventListener('input', () => {
+        if (selectedCustomBuilding) {
+            BuildingTool.updateBuilding(selectedCustomBuilding.id, { color: colorPicker.value });
+        }
+    });
+
+    // Create building
+    createBtn.addEventListener('click', async () => {
+        const height = parseFloat(heightSlider.value);
+        const color = colorPicker.value;
+        const storeys = Math.round(height / 3.5);
+        createBtn.disabled = true;
+        createBtn.textContent = 'Creating...';
+        try {
+            const building = await BuildingTool.createBuilding({ height, color, storeys });
+            if (building) {
+                setStatus(`Created custom building (${building.width}m × ${building.depth}m × ${building.height}m)`);
+            }
+        } catch (e) {
+            setStatus('Error creating building: ' + e.message);
+            console.error('Create building error:', e);
+        }
+        createBtn.disabled = false;
+        createBtn.textContent = 'Create Building';
+        updateStats();
+        updateBuildingList();
+    });
+
+    // Reset footprint
+    resetBtn.addEventListener('click', () => {
+        BuildingTool.resetFootprint();
+    });
+
+    // Listen for BuildingTool state changes
+    BuildingTool.onUpdate = (mode, pointCount) => {
+        const idleDiv = document.getElementById('buildToolIdle');
+        const drawDiv = document.getElementById('buildToolDrawing');
+        const configDiv = document.getElementById('buildToolConfig');
+        const pointCountEl = document.getElementById('pointCount');
+
+        idleDiv.classList.toggle('hidden', mode !== 'idle');
+        drawDiv.classList.toggle('hidden', mode !== 'drawing');
+        configDiv.classList.toggle('hidden', mode !== 'configuring');
+
+        if (mode === 'drawing') {
+            pointCountEl.textContent = `Points: ${pointCount}`;
+            undoBtn.disabled = pointCount === 0;
+            doneBtn.disabled = pointCount < 3;
+        }
+
+        if (mode === 'configuring') {
+            const dims = BuildingTool.getFootprintDimensions();
+            document.getElementById('customWidth').textContent = dims.width + 'm';
+            document.getElementById('customDepth').textContent = dims.depth + 'm';
+            document.getElementById('customArea').textContent = dims.area + ' m²';
+        }
+
+        updateBuildingList();
+        updateStats();
+    };
+}
+
+function selectCustomBuilding(entity) {
+    // Deselect previous SODA building selection
+    selectBuilding(null);
+
+    if (!entity) {
+        selectedCustomBuilding = null;
+        document.getElementById('infoBox').classList.add('hidden');
+        return;
+    }
+
+    const building = BuildingTool.selectBuilding(entity);
+    if (!building) return;
+    selectedCustomBuilding = building;
+
+    // Show properties in info box
+    document.getElementById('infoContent').innerHTML = `
+        <table>
+            <tr><td>ID</td><td>${building.id}</td></tr>
+            <tr><td>Width</td><td>${building.width}m</td></tr>
+            <tr><td>Depth</td><td>${building.depth}m</td></tr>
+            <tr><td>Height</td><td>${building.height}m</td></tr>
+            <tr><td>Storeys</td><td>${building.storeys}</td></tr>
+            <tr><td>Area</td><td>${building.area} m&sup2;</td></tr>
+        </table>
+        <button onclick="deleteSelectedCustomBuilding()" style="margin-top:8px;padding:5px 12px;border:none;border-radius:4px;background:#c0392b;color:white;cursor:pointer;font-size:12px;width:100%;">Delete Building</button>`;
+    document.getElementById('infoBox').classList.remove('hidden');
+
+    // Sync config panel to this building's values
+    document.getElementById('buildHeightSlider').value = building.height;
+    document.getElementById('heightValue').textContent = building.height + 'm';
+    document.getElementById('buildColorPicker').value = building.color;
+    document.querySelectorAll('.storey-btn').forEach(btn => {
+        const s = parseInt(btn.dataset.storeys);
+        btn.classList.toggle('active', s === building.storeys || (s === 6 && building.storeys >= 6));
+    });
+}
+
+function deleteSelectedCustomBuilding() {
+    if (!selectedCustomBuilding) return;
+    BuildingTool.deleteBuilding(selectedCustomBuilding.id);
+    selectedCustomBuilding = null;
+    document.getElementById('infoBox').classList.add('hidden');
+    updateBuildingList();
+    updateStats();
+}
+
+function updateBuildingList() {
+    const listDiv = document.getElementById('customBuildingList');
+    const itemsDiv = document.getElementById('customBuildingItems');
+
+    if (BuildingTool.buildings.length === 0) {
+        listDiv.classList.add('hidden');
+        return;
+    }
+
+    listDiv.classList.remove('hidden');
+    itemsDiv.innerHTML = BuildingTool.buildings.map(b => `
+        <div class="custom-building-item" onclick="flyToCustomBuilding('${b.id}')">
+            <div class="color-swatch" style="background:${b.color}"></div>
+            <span class="item-info">${b.width}m × ${b.depth}m × ${b.height}m</span>
+            <button class="delete-btn" onclick="event.stopPropagation(); BuildingTool.deleteBuilding('${b.id}'); updateBuildingList(); updateStats();">&times;</button>
+        </div>
+    `).join('');
+}
+
+function flyToCustomBuilding(id) {
+    const building = BuildingTool.buildings.find(b => b.id === id);
+    if (!building || !building.entity) return;
+    viewer.flyTo(building.entity, { duration: 1 });
+}
+
 function setStatus(msg) {
     document.getElementById('searchStatus').textContent = msg;
 }
@@ -448,7 +664,8 @@ function updateStats() {
     const stats = document.getElementById('stats');
     stats.textContent = `Buildings: ${Buildings.entities.length} | ` +
         `Tree tilesets: ${Trees.loadedTiles.size} | ` +
-        `Custom models: ${Object.keys(Buildings.customModels).length}`;
+        `Custom models: ${Object.keys(Buildings.customModels).length} | ` +
+        `Custom buildings: ${BuildingTool.buildings.length}`;
 }
 
 // Close info box

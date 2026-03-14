@@ -57,6 +57,63 @@
             <div id="selectedBuilding">No building selected</div>
         </div>
 
+        <div class="building-tool-section">
+            <h3>Custom Building Tool</h3>
+            <div id="buildToolIdle">
+                <button id="drawBuildingBtn" class="btn-draw">Draw Building</button>
+            </div>
+            <div id="buildToolDrawing" class="hidden">
+                <p class="drawing-hint">Click on the map to place corners.<br>Double-click or press Done to finish.</p>
+                <div class="draw-controls">
+                    <span id="pointCount">Points: 0</span>
+                    <button id="undoPointBtn" disabled>Undo</button>
+                    <button id="doneDrawBtn" disabled>Done</button>
+                    <button id="cancelDrawBtn" class="btn-cancel">Cancel</button>
+                </div>
+            </div>
+            <div id="buildToolConfig" class="hidden">
+                <div class="dimension-row">
+                    <div class="dimension-box">
+                        <label>Width</label>
+                        <span id="customWidth">—</span>
+                    </div>
+                    <div class="dimension-box">
+                        <label>Depth</label>
+                        <span id="customDepth">—</span>
+                    </div>
+                    <div class="dimension-box">
+                        <label>Area</label>
+                        <span id="customArea">—</span>
+                    </div>
+                </div>
+                <label class="config-label">
+                    Height: <span id="heightValue">10m</span>
+                    <input type="range" id="buildHeightSlider" min="3" max="100" value="10" step="0.5">
+                </label>
+                <div class="storey-row">
+                    <span>Storeys:</span>
+                    <div class="storey-btns">
+                        <button class="storey-btn" data-storeys="1">1</button>
+                        <button class="storey-btn" data-storeys="2">2</button>
+                        <button class="storey-btn active" data-storeys="3">3</button>
+                        <button class="storey-btn" data-storeys="4">4</button>
+                        <button class="storey-btn" data-storeys="5">5</button>
+                        <button class="storey-btn" data-storeys="6">6+</button>
+                    </div>
+                </div>
+                <label class="config-label">
+                    Color: <input type="color" id="buildColorPicker" value="#5599cc">
+                </label>
+                <div class="config-actions">
+                    <button id="createBuildingBtn" class="btn-create">Create Building</button>
+                    <button id="resetFootprintBtn" class="btn-cancel">Reset</button>
+                </div>
+            </div>
+            <div id="customBuildingList" class="hidden">
+                <div id="customBuildingItems"></div>
+            </div>
+        </div>
+
         <div class="stats" id="stats"></div>
     </div>
 
@@ -68,6 +125,7 @@
 
     <script src="js/geocoder.js"></script>
     <script src="js/buildings.js"></script>
+    <script src="js/building-tool.js"></script>
     <script src="js/trees.js"></script>
     <script src="js/app.js"></script>
 </body>

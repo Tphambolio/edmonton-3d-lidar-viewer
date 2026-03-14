@@ -226,3 +226,193 @@ html, body, #cesiumContainer { width: 100%; height: 100%; overflow: hidden; }
     color: #888;
     width: 80px;
 }
+
+/* Custom Building Tool */
+.building-tool-section {
+    margin-top: 12px;
+    padding: 10px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 4px;
+}
+.building-tool-section h3 {
+    font-size: 13px;
+    margin-bottom: 8px;
+}
+
+.btn-draw {
+    width: 100%;
+    padding: 8px;
+    border: none;
+    border-radius: 4px;
+    background: #2a9d8f;
+    color: white;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+}
+.btn-draw:hover { background: #3ab8a8; }
+
+.drawing-hint {
+    font-size: 11px;
+    color: #6ec6b8;
+    margin-bottom: 8px;
+    line-height: 1.5;
+    animation: hintPulse 2s ease-in-out infinite;
+}
+@keyframes hintPulse {
+    0%, 100% { opacity: 0.8; }
+    50% { opacity: 1; }
+}
+
+.draw-controls {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+.draw-controls span {
+    flex: 1;
+    font-size: 12px;
+    color: #aaa;
+}
+.draw-controls button {
+    padding: 5px 10px;
+    border: none;
+    border-radius: 4px;
+    background: #4a90d9;
+    color: white;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+}
+.draw-controls button:hover:not(:disabled) { background: #5aa0e9; }
+.draw-controls button:disabled { background: #444; cursor: default; }
+.btn-cancel {
+    background: #666 !important;
+}
+.btn-cancel:hover { background: #777 !important; }
+
+.dimension-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.dimension-box {
+    flex: 1;
+    background: rgba(0,0,0,0.3);
+    border-radius: 4px;
+    padding: 6px;
+    text-align: center;
+}
+.dimension-box label {
+    display: block;
+    font-size: 10px;
+    color: #888;
+    margin-bottom: 2px;
+}
+.dimension-box span {
+    font-size: 13px;
+    color: #fff;
+    font-weight: 600;
+}
+
+.config-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #ccc;
+    margin-bottom: 8px;
+}
+.config-label input[type="range"] {
+    flex: 1;
+    max-width: 140px;
+}
+.config-label input[type="color"] {
+    width: 32px;
+    height: 24px;
+    border: 1px solid #555;
+    border-radius: 3px;
+    background: none;
+    cursor: pointer;
+    padding: 0;
+}
+
+.storey-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: #ccc;
+}
+.storey-btns {
+    display: flex;
+    gap: 3px;
+}
+.storey-btn {
+    padding: 4px 8px;
+    border: 1px solid #555;
+    border-radius: 3px;
+    background: #2a2a35;
+    color: #ccc;
+    cursor: pointer;
+    font-size: 11px;
+    min-width: 28px;
+}
+.storey-btn:hover { background: #3a3a45; border-color: #777; }
+.storey-btn.active {
+    background: #2a9d8f;
+    border-color: #2a9d8f;
+    color: white;
+    font-weight: 600;
+}
+
+.config-actions {
+    display: flex;
+    gap: 6px;
+}
+.btn-create {
+    flex: 1;
+    padding: 8px;
+    border: none;
+    border-radius: 4px;
+    background: #2a9d8f;
+    color: white;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+}
+.btn-create:hover { background: #3ab8a8; }
+
+#customBuildingList {
+    margin-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding-top: 6px;
+}
+.custom-building-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px;
+    border-radius: 3px;
+    font-size: 11px;
+    color: #ccc;
+    cursor: pointer;
+}
+.custom-building-item:hover { background: rgba(255,255,255,0.05); }
+.custom-building-item .color-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    border: 1px solid rgba(255,255,255,0.2);
+}
+.custom-building-item .item-info { flex: 1; }
+.custom-building-item .delete-btn {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 4px;
+}
+.custom-building-item .delete-btn:hover { color: #e55; }
