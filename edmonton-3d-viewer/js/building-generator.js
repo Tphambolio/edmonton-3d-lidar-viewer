@@ -46,28 +46,32 @@ const BuildingGenerator = {
             localPts.reverse();
         }
 
-        // Materials
+        // Materials — DoubleSide so walls are visible from both sides
         const wallMat = new THREE.MeshStandardMaterial({
             color: new THREE.Color(config.colors?.wall || '#CCBBAA'),
             roughness: 0.85,
-            metalness: 0.05
+            metalness: 0.05,
+            side: THREE.DoubleSide
         });
         const glassMat = new THREE.MeshStandardMaterial({
             color: new THREE.Color(config.colors?.glass || '#446688'),
             roughness: 0.1,
             metalness: 0.3,
             transparent: true,
-            opacity: 0.6
+            opacity: 0.6,
+            side: THREE.DoubleSide
         });
         const frameMat = new THREE.MeshStandardMaterial({
             color: new THREE.Color(config.colors?.frame || '#888888'),
             roughness: 0.5,
-            metalness: 0.2
+            metalness: 0.2,
+            side: THREE.DoubleSide
         });
         const slabMat = new THREE.MeshStandardMaterial({
             color: new THREE.Color(config.colors?.wall || '#CCBBAA').multiplyScalar(0.85),
             roughness: 0.9,
-            metalness: 0.05
+            metalness: 0.05,
+            side: THREE.DoubleSide
         });
 
         const numFloors = config.numFloors || 3;
@@ -507,9 +511,11 @@ const BuildingGenerator = {
         const cosLat = Math.cos(centLat * Math.PI / 180);
         const DEG_TO_M = 111000;
 
+        // X = east (longitude), Z = south (negative latitude)
+        // glTF convention: -Z is forward (north), so we negate lat offset
         return footprint.map(p => ({
             x: (p.lng - centLng) * cosLat * DEG_TO_M,
-            z: (p.lat - centLat) * DEG_TO_M
+            z: -(p.lat - centLat) * DEG_TO_M
         }));
     },
 
