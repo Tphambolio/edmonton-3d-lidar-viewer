@@ -1052,7 +1052,14 @@ function selectCustomBuilding(entity) {
         return;
     }
 
-    const building = BuildingTool.selectBuilding(entity);
+    let building = BuildingTool.selectBuilding(entity);
+    // If clicking the 3D model entity, find the building by matching modelEntity or name
+    if (!building) {
+        const entityName = entity.name || '';
+        building = BuildingTool.buildings.find(b =>
+            b.modelEntity === entity || entityName === b.id + '_model'
+        );
+    }
     if (!building) return;
     selectedCustomBuilding = building;
 
