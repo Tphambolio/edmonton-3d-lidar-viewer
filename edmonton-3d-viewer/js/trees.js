@@ -41,8 +41,9 @@ const Trees = {
             }
         }
         matching.sort((a, b) => a.dist - b.dist);
-        console.log(`Tiles within ${maxDistM.toFixed(0)}m: ${matching.length} (nearest: ${matching[0]?.name || 'none'})`);
-        return matching.map(m => m.name);
+        const limited = matching.slice(0, 4); // cap at 4 nearest tiles
+        console.log(`Tiles within ${maxDistM.toFixed(0)}m: ${matching.length} total, loading ${limited.length} nearest (${limited[0]?.name || 'none'})`);
+        return limited.map(m => m.name);
     },
 
     /**
