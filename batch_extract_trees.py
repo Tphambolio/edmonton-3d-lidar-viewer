@@ -47,6 +47,10 @@ MIN_CLUSTER_PTS = 80
 MAX_TREES = 200
 MAX_VERTS_PER_TILE = 2_000_000  # ~50MB GLB — caps memory at ~4GB per tile
 
+# Trunk generation
+TRUNK_N_SIDES = 8          # polygon sides for trunk cylinder
+TRUNK_MIN_HEIGHT = 0.5     # minimum trunk height to generate (m)
+
 # CRS transformer: EPSG:3776 (Alberta 3TM 114) → WGS84
 transformer = Transformer.from_crs("EPSG:3776", "EPSG:4326", always_xy=True)
 
@@ -223,29 +227,128 @@ def classify_tree(rgb):
 
 
 def tint_tree_colors(colors, conifer_score):
-    """Tint vertex colors based on conifer score for visual variety.
+    """Tint and correct vertex colors for natural-looking foliage.
 
-    Conifers:  push toward darker blue-green
-    Deciduous: push toward warmer yellow-green
+    Raw aerial RGB has harsh shadows (near-black) and bright sunlit patches,
+    giving a camouflage look. This function:
+      1. Lifts shadows (raises floor brightness)
+      2. Compresses contrast (softens harsh light/dark transitions)
+      3. Boosts green saturation for natural foliage appearance
+      4. Applies conifer/deciduous tint for variety
     """
     c = colors.astype(np.float32)
 
+    # --- Step 1: Lift only the deepest shadows, keep dark greens rich ---
+    # Only lift the blackest pixels (< 35), preserve the rest.
+    # This keeps dark foliage dark (= rich) while removing harsh black.
+    floor_val = 40.0
+    c = np.maximum(c, floor_val)
+
+    # --- Step 2: Strong saturation boost + green channel push ---
+    # Aerial canopy RGB is grey-olive due to mixed pixels and sensor response.
+    # Aggressively boost saturation and push green to get vibrant foliage.
+    grey = 0.299 * c[:, 0] + 0.587 * c[:, 1] + 0.114 * c[:, 2]
+    sat_boost = 1.80  # 80% more saturated — makes greens pop
+    for ch in range(3):
+        c[:, ch] = grey + (c[:, ch] - grey) * sat_boost
+
+    # Strong green push, suppress red and blue for rich foliage
+    c[:, 1] *= 1.25   # 25% green boost
+    c[:, 0] *= 0.78   # 22% red reduction (removes grey/brown cast)
+    c[:, 2] *= 0.72   # 28% blue reduction (removes mint/cool cast)
+
+    # --- Step 3: Apply conifer/deciduous tint (subtle) ---
     if conifer_score > 0.4:
-        # Conifer tint: darken, boost blue-green
-        t = (conifer_score - 0.4) / 0.6  # 0-1 within conifer range
-        c[:, 0] *= (1.0 - 0.20 * t)   # reduce red
-        c[:, 1] *= (1.0 - 0.05 * t)   # slight green reduction (darken)
-        c[:, 2] *= (1.0 + 0.15 * t)   # boost blue
-        c *= (1.0 - 0.12 * t)         # overall darken
+        # Conifer: slightly cooler, deeper
+        t = (conifer_score - 0.4) / 0.6
+        c[:, 0] *= (1.0 - 0.08 * t)   # slightly less red
+        c[:, 2] *= (1.0 + 0.05 * t)   # touch more blue
+        c *= (1.0 - 0.05 * t)         # slightly darker
     else:
-        # Deciduous tint: warm up, brighten slightly
-        t = (0.4 - conifer_score) / 0.4  # 0-1 within deciduous range
-        c[:, 0] *= (1.0 + 0.12 * t)   # boost red (warmth)
-        c[:, 1] *= (1.0 + 0.06 * t)   # slight green boost
-        c[:, 2] *= (1.0 - 0.10 * t)   # reduce blue
-        c *= (1.0 + 0.05 * t)         # slight brighten
+        # Deciduous: slightly warmer
+        t = (0.4 - conifer_score) / 0.4
+        c[:, 0] *= (1.0 + 0.05 * t)   # touch warmer
+        c[:, 2] *= (1.0 - 0.04 * t)   # touch less blue
+        c *= (1.0 + 0.03 * t)         # slightly brighter
 
     return np.clip(c, 0, 255).astype(np.uint8)
+
+
+def generate_trunk_mesh(centroid_x, centroid_y, trunk_top_z, ground_z,
+                        tree_height, conifer_score, canopy_radius=2.0):
+    """Generate a tapered brown cylinder from ground to canopy bottom.
+
+    Returns (verts, faces, colors) in the same local coordinate frame as the
+    canopy mesh, or None if the trunk would be too short.
+
+    ground_z: actual ground elevation at tree location in local coords
+              (pz - hag), NOT z=0 which is tile minimum elevation.
+    trunk_top_z: canopy bottom in local coords (lowest tree point).
+
+    Trunk radius is scaled to ~12-18% of canopy radius so trunks are visible
+    at typical viewer zoom levels (realistic DBH is subpixel at 512m tile scale).
+    """
+    trunk_height = trunk_top_z - ground_z
+    if trunk_height < TRUNK_MIN_HEIGHT:
+        return None
+
+    n = TRUNK_N_SIDES
+
+    # Visual trunk radius: fraction of canopy spread (not allometric DBH)
+    if conifer_score > 0.4:
+        r_base = np.clip(canopy_radius * 0.12, 0.15, 1.2)  # conifer: thinner
+        taper = 0.55
+        base_color = np.array([90, 60, 35], dtype=np.float64)
+    else:
+        r_base = np.clip(canopy_radius * 0.18, 0.20, 1.5)  # deciduous: thicker
+        taper = 0.70
+        base_color = np.array([110, 80, 45], dtype=np.float64)
+
+    r_top = r_base * taper
+
+    # Vertex rings
+    angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    cos_a = np.cos(angles)
+    sin_a = np.sin(angles)
+
+    # Bottom ring at ground_z, top ring at trunk_top_z, bottom center for cap
+    bottom = np.column_stack([
+        centroid_x + r_base * cos_a,
+        centroid_y + r_base * sin_a,
+        np.full(n, ground_z)
+    ])
+    top = np.column_stack([
+        centroid_x + r_top * cos_a,
+        centroid_y + r_top * sin_a,
+        np.full(n, trunk_top_z)
+    ])
+    center = np.array([[centroid_x, centroid_y, ground_z]])
+
+    verts = np.vstack([bottom, top, center])  # indices: 0..n-1, n..2n-1, 2n
+
+    # Faces: cylinder sides + bottom cap
+    faces = []
+    for i in range(n):
+        j = (i + 1) % n
+        faces.append([i, j, n + j])          # lower tri
+        faces.append([i, n + j, n + i])      # upper tri
+        faces.append([2 * n, j, i])           # bottom cap
+    faces = np.array(faces, dtype=np.int32)
+
+    # Brown color with per-tree variation and vertical gradient
+    seed = int(abs(centroid_x * 1000 + centroid_y * 1000)) % (2**31)
+    rng = np.random.default_rng(seed)
+    variation = rng.integers(-12, 13, size=3).astype(np.float64)
+    trunk_rgb = np.clip(base_color + variation, 0, 255)
+
+    # Vertical gradient: darker at base, lighter near canopy
+    heights = verts[:, 2] - ground_z
+    t = heights / max(trunk_height, 0.01)
+    colors = np.zeros((len(verts), 3), dtype=np.uint8)
+    for ch in range(3):
+        colors[:, ch] = np.clip(trunk_rgb[ch] * (1.0 + 0.15 * t), 0, 255).astype(np.uint8)
+
+    return verts, faces, colors
 
 
 def extract_trees(x, y, z, cls, r, g, b, cx, cy, z_base, dem, gxi, gyi, xmin, ymin):
@@ -303,6 +406,36 @@ def extract_trees(x, y, z, cls, r, g, b, cx, cy, z_base, dem, gxi, gyi, xmin, ym
 
         # Tint vertex colors based on classification
         colors = tint_tree_colors(colors, conifer_score)
+
+        # Generate trunk cylinder from ground to canopy bottom
+        # Compute actual ground level at tree position from HAG
+        tree_hag_vals = hag_f[mask]
+        if len(pts) != len(tree_hag_vals):
+            # After downsampling, recompute from pts directly
+            tree_ground_z = pts[:, 2].min() - 3.0  # approximate
+        else:
+            tree_ground_z = np.median(pz[mask] - hag_f[mask])
+        # Estimate canopy radius from point spread
+        canopy_r = max(pts[:, 0].max() - pts[:, 0].min(),
+                       pts[:, 1].max() - pts[:, 1].min()) / 2.0
+        # Use 25th percentile of z — extends trunk well into canopy body
+        # to bridge gap from marching cubes surface (voxel padding + smoothing)
+        canopy_penetration_z = np.percentile(pts[:, 2], 25)
+        trunk = generate_trunk_mesh(
+            centroid_x=pts[:, 0].mean(),
+            centroid_y=pts[:, 1].mean(),
+            trunk_top_z=canopy_penetration_z,
+            ground_z=tree_ground_z,
+            tree_height=pts[:, 2].max() - tree_ground_z,
+            conifer_score=conifer_score,
+            canopy_radius=canopy_r
+        )
+        if trunk is not None:
+            t_verts, t_faces, t_colors = trunk
+            t_faces = t_faces + len(verts)
+            verts = np.vstack([verts, t_verts])
+            faces = np.vstack([faces, t_faces])
+            colors = np.vstack([colors, t_colors])
 
         count += 1
         all_verts.append(verts)
@@ -390,6 +523,13 @@ def write_glb(filepath, verts, faces, colors):
         "scene": 0,
         "scenes": [{"nodes": [0]}],
         "nodes": [{"mesh": 0, "name": "trees"}],
+        "materials": [{
+            "pbrMetallicRoughness": {
+                "metallicFactor": 0.0,
+                "roughnessFactor": 1.0
+            },
+            "doubleSided": True
+        }],
         "meshes": [{
             "primitives": [{
                 "attributes": {
@@ -397,6 +537,7 @@ def write_glb(filepath, verts, faces, colors):
                     "COLOR_0": 1
                 },
                 "indices": 2,
+                "material": 0,
                 "mode": 4  # TRIANGLES
             }]
         }],
