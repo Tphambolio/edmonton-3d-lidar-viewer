@@ -734,7 +734,7 @@ const BuildingGenerator = {
         if (halfH > halfW) {
             // Swap so U is always the longer axis
             [halfW, halfH] = [halfH, halfW];
-            [axisU, axisV] = [axisV, { x: -axisV.x, z: -axisV.z }];
+            [axisU, axisV] = [axisV, { x: -axisU.x, z: -axisU.z }];
         }
 
         return { center: { x: cx, z: cz }, halfW, halfH, axisU, axisV };
