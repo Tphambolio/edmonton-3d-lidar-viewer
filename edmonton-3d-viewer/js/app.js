@@ -1198,7 +1198,66 @@ function editSelectedCustomBuilding() {
 
     // Mark that we're in edit mode
     window._editingBuildingId = building.id;
+
+    setStatus('Editing building — use Arrow keys to nudge position');
 }
+
+/**
+ * Nudge a custom building's position by a lat/lng delta.
+ * Updates footprint, flat extrusion entity, and 3D model entity.
+ */
+async function nudgeBuilding(building, dLat, dLng) {
+    // Update footprint coordinates
+    for (const p of building.footprint) {
+        p.lat += dLat;
+        p.lng += dLng;
+    }
+
+    // Rebuild flat extrusion positions
+    const positions = [];
+    for (const p of building.footprint) {
+        positions.push(p.lng, p.lat);
+    }
+    building.entity.polygon.hierarchy = Cesium.Cartesian3.fromDegreesArray(positions);
+
+    // Update terrain height at new centroid
+    const centLat = building.footprint.reduce((s, p) => s + p.lat, 0) / building.footprint.length;
+    const centLng = building.footprint.reduce((s, p) => s + p.lng, 0) / building.footprint.length;
+    const terrainH = await Buildings.getTerrainHeight(viewer, centLat, centLng);
+    building.terrainH = terrainH;
+    building.entity.polygon.height = terrainH + 0.5;
+    building.entity.polygon.extrudedHeight = terrainH + building.height;
+
+    // Move the 3D model entity if present
+    if (building.modelEntity) {
+        const newPos = Cesium.Cartesian3.fromDegrees(centLng, centLat, terrainH);
+        building.modelEntity.position = newPos;
+        const hpr = new Cesium.HeadingPitchRoll(0, 0, 0);
+        building.modelEntity.orientation = Cesium.Transforms.headingPitchRollQuaternion(newPos, hpr);
+    }
+}
+
+// Arrow key handler for nudging buildings in edit mode
+document.addEventListener('keydown', (e) => {
+    if (!window._editingBuildingId || !selectedCustomBuilding) return;
+
+    // Don't intercept if user is typing in an input
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+
+    const step = e.shiftKey ? 0.00005 : 0.00001; // ~5.5m or ~1.1m
+    let dLat = 0, dLng = 0;
+
+    switch (e.key) {
+        case 'ArrowUp':    dLat = step;  break;
+        case 'ArrowDown':  dLat = -step; break;
+        case 'ArrowLeft':  dLng = -step; break;
+        case 'ArrowRight': dLng = step;  break;
+        default: return;
+    }
+
+    e.preventDefault();
+    nudgeBuilding(selectedCustomBuilding, dLat, dLng);
+});
 
 function deleteSelectedCustomBuilding() {
     if (!selectedCustomBuilding) return;
