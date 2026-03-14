@@ -85,6 +85,13 @@
                     <button id="placeBuildingBtn" class="btn-draw">Place on Map</button>
                     <button id="drawBuildingBtn" class="btn-draw btn-draw-alt">Draw Custom</button>
                 </div>
+                <div class="lot-controls">
+                    <label class="lot-toggle">
+                        <input type="checkbox" id="showLotsCheckbox">
+                        <span>Show Lot Boundaries</span>
+                    </label>
+                    <span id="lotStatus" class="lot-status"></span>
+                </div>
             </div>
             <div id="buildToolDrawing" class="hidden">
                 <p class="drawing-hint">Click on the map to place corners.<br>Double-click or press Done to finish.</p>
@@ -265,6 +272,7 @@
     <script src="js/geocoder.js"></script>
     <script src="js/buildings.js"></script>
     <script src="js/building-tool.js"></script>
+    <script src="js/lot-loader.js"></script>
     <script src="js/trees.js"></script>
     <script src="js/app.js"></script>
     <script type="module" src="js/building-generator.js"></script>

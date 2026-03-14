@@ -75,10 +75,12 @@ async function init() {
 
     // Initialize custom building tool
     BuildingTool.init(viewer);
+    LotLoader.init(viewer);
 
     // Wire up UI
     setupUI();
     setupBuildingToolUI();
+    setupLotUI();
     updateStats();
 }
 
@@ -338,6 +340,13 @@ async function loadScene(lat, lng, radiusM) {
     const treeCount = await Trees.loadAround(viewer, lat, lng, radiusM);
     if (treeCount > 0) {
         setStatus(`Loaded ${bldgCount} buildings, ${treeCount} tree tiles`);
+    }
+
+    // Load lots if enabled
+    if (document.getElementById('showLotsCheckbox')?.checked) {
+        const lotCount = await LotLoader.loadAround(lat, lng, radiusM);
+        const lotStatus = document.getElementById('lotStatus');
+        if (lotStatus) lotStatus.textContent = lotCount > 0 ? `${lotCount} lots` : '';
     }
 
     updateStats();
@@ -1190,6 +1199,72 @@ function setupBuildingToolUI() {
         updateBuildingList();
         updateStats();
     };
+}
+
+function setupLotUI() {
+    const checkbox = document.getElementById('showLotsCheckbox');
+    const lotStatus = document.getElementById('lotStatus');
+
+    checkbox.addEventListener('change', async () => {
+        if (checkbox.checked) {
+            // Get current camera center
+            const carto = viewer.camera.positionCartographic;
+            const lat = Cesium.Math.toDegrees(carto.latitude);
+            const lng = Cesium.Math.toDegrees(carto.longitude);
+            const radius = parseInt(document.getElementById('radiusSlider').value) || 200;
+            lotStatus.textContent = 'Loading...';
+            const count = await LotLoader.loadAround(lat, lng, radius);
+            lotStatus.textContent = count > 0 ? `${count} lots` : 'No lots found';
+        } else {
+            LotLoader.clear();
+            lotStatus.textContent = '';
+        }
+    });
+
+    // Handle lot clicks — populate building tool footprint
+    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+
+    handler.setInputAction((click) => {
+        const picked = viewer.scene.pick(click.position);
+        if (!picked?.id) return;
+
+        if (LotLoader.isLotEntity(picked.id)) {
+            const polygon = LotLoader.getLotPolygon(picked.id);
+            if (!polygon || polygon.length < 3) return;
+
+            // Populate building tool with this lot's polygon
+            BuildingTool.cancel(); // reset any current drawing
+            BuildingTool._points = polygon.map(p => ({
+                lat: p.lat,
+                lng: p.lng,
+                cartesian: Cesium.Cartesian3.fromDegrees(p.lng, p.lat)
+            }));
+            BuildingTool.mode = 'configuring';
+            BuildingTool._fireUpdate();
+
+            // Flash highlight on the lot
+            LotLoader.highlightLot(picked.id);
+            setTimeout(() => LotLoader.unhighlightLot(), 1500);
+
+            setStatus('Lot selected — configure your building');
+        }
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+    // Hover highlight for lots
+    handler.setInputAction((movement) => {
+        if (!checkbox.checked) return;
+        const picked = viewer.scene.pick(movement.endPosition);
+        if (picked?.id && LotLoader.isLotEntity(picked.id)) {
+            LotLoader.highlightLot(picked.id);
+            viewer.scene.canvas.style.cursor = 'pointer';
+        } else {
+            LotLoader.unhighlightLot();
+            // Only reset cursor if not in drawing mode
+            if (BuildingTool.mode !== 'drawing') {
+                viewer.scene.canvas.style.cursor = '';
+            }
+        }
+    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 }
 
 function selectCustomBuilding(entity) {
