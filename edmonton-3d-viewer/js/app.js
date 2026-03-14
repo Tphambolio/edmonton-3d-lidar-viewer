@@ -456,6 +456,7 @@ async function handleModelFile(file) {
 // ——— Custom Building Tool UI ———
 
 let selectedCustomBuilding = null;
+window._editingBuildingId = null;
 
 function setupBuildingToolUI() {
     const drawBtn = document.getElementById('drawBuildingBtn');
@@ -580,6 +581,35 @@ function setupBuildingToolUI() {
     sliderDisplay('doorWidthSlider', 'doorWidthVal', 'm');
     sliderDisplay('doorHeightSlider', 'doorHeightVal', 'm');
     sliderDisplay('parapetHeightSlider', 'parapetHeightVal', 'm');
+
+    // Roof type buttons
+    window._roofType = 'flat';
+    document.querySelectorAll('.roof-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.roof-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            window._roofType = btn.dataset.roof;
+
+            // Show/hide pitch slider and parapet based on roof type
+            const pitchRow = document.getElementById('roofPitchRow');
+            const roofColorRow = document.getElementById('roofColorRow');
+            const parapetRow = document.getElementById('parapetRow');
+            const isPitched = btn.dataset.roof !== 'flat';
+            pitchRow.style.display = isPitched ? 'flex' : 'none';
+            roofColorRow.style.display = isPitched ? 'flex' : 'none';
+            parapetRow.style.display = isPitched ? 'none' : 'flex';
+        });
+    });
+
+    // Roof pitch slider
+    const roofPitchSlider = document.getElementById('roofPitchSlider');
+    const roofPitchVal = document.getElementById('roofPitchVal');
+    roofPitchSlider.addEventListener('input', () => {
+        roofPitchVal.textContent = roofPitchSlider.value + '°';
+    });
+    // Initially hide pitch/color since default is flat
+    document.getElementById('roofPitchRow').style.display = 'none';
+    document.getElementById('roofColorRow').style.display = 'none';
 
     // Window offset slider
     const winOffsetSlider = document.getElementById('winOffsetSlider');
@@ -727,7 +757,12 @@ function setupBuildingToolUI() {
             setStatus('3D generator still loading...');
             return;
         }
-        if (BuildingTool._points.length < 3) {
+
+        // Check if we're editing an existing building or creating new
+        const editingId = window._editingBuildingId;
+        const existingBuilding = editingId ? BuildingTool.buildings.find(b => b.id === editingId) : null;
+
+        if (!existingBuilding && BuildingTool._points.length < 3) {
             setStatus('Draw a footprint first');
             return;
         }
@@ -763,56 +798,103 @@ function setupBuildingToolUI() {
                 position: parseInt(doorPosSlider.value) / 100
             } : null;
 
+            // Use existing footprint for regeneration, or current points for new
+            const footprint = existingBuilding
+                ? existingBuilding.footprint
+                : BuildingTool._points.map(p => ({ lat: p.lat, lng: p.lng }));
+
             const config = {
-                footprint: BuildingTool._points.map(p => ({ lat: p.lat, lng: p.lng })),
+                footprint: footprint,
                 numFloors: storeys,
                 floorHeight: floorHeight,
                 colors: {
                     wall: colorPicker.value,
                     glass: document.getElementById('glassColorPicker').value,
-                    frame: document.getElementById('frameColorPicker').value
+                    frame: document.getElementById('frameColorPicker').value,
+                    roof: document.getElementById('roofColorPicker').value
                 },
                 floorConfigs: { ...window._floorConfigs },
                 door: door,
+                roofType: window._roofType || 'flat',
+                roofPitch: parseFloat(document.getElementById('roofPitchSlider').value),
                 parapet: document.getElementById('addParapetChk').checked,
                 parapetHeight: parseFloat(document.getElementById('parapetHeightSlider').value)
             };
 
             const glbUrl = await window.BuildingGenerator.generate(config);
 
-            // Create the building entity first (flat extrusion for metadata/selection)
-            const building = await BuildingTool.createBuilding({
-                height, color: colorPicker.value, storeys
-            });
+            let building;
 
-            if (building) {
-                // Replace flat extrusion with the generated 3D model
-                building.entity.show = false;
+            if (existingBuilding) {
+                // --- Regeneration: update existing building ---
+                building = existingBuilding;
+
+                // Remove old model entity
+                if (building.modelEntity) {
+                    viewer.entities.remove(building.modelEntity);
+                }
+                if (building.glbUrl) {
+                    URL.revokeObjectURL(building.glbUrl);
+                }
+
+                // Update building properties
+                building.height = height;
+                building.storeys = storeys;
+                building.color = colorPicker.value;
                 building.glbUrl = glbUrl;
 
-                // Place GLB at the building's centroid
-                const centLat = building.footprint.reduce((s, p) => s + p.lat, 0) / building.footprint.length;
-                const centLng = building.footprint.reduce((s, p) => s + p.lng, 0) / building.footprint.length;
-                const terrainH = await Buildings.getTerrainHeight(viewer, centLat, centLng);
-
-                const position = Cesium.Cartesian3.fromDegrees(centLng, centLat, terrainH);
-                const hpr = new Cesium.HeadingPitchRoll(0, 0, 0);
-                const orientation = Cesium.Transforms.headingPitchRollQuaternion(position, hpr);
-
-                const modelEntity = viewer.entities.add({
-                    name: building.id + '_model',
-                    position: position,
-                    orientation: orientation,
-                    model: {
-                        uri: glbUrl,
-                        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-                        scale: 1.0
-                    }
+                // Update flat extrusion (hidden but keeps metadata)
+                building.entity.polygon.extrudedHeight = building.terrainH + height;
+                building.entity.polygon.material = Cesium.Color.fromCssColorString(colorPicker.value).withAlpha(0.85);
+                building.entity.show = false;
+            } else {
+                // --- New building ---
+                building = await BuildingTool.createBuilding({
+                    height, color: colorPicker.value, storeys
                 });
-                building.modelEntity = modelEntity;
-
-                setStatus(`Created 3D building (${building.width}m × ${building.depth}m, ${storeys} floors)`);
+                if (!building) throw new Error('Failed to create building entity');
+                building.entity.show = false;
+                building.glbUrl = glbUrl;
             }
+
+            // Place/replace GLB model at building centroid
+            const centLat = building.footprint.reduce((s, p) => s + p.lat, 0) / building.footprint.length;
+            const centLng = building.footprint.reduce((s, p) => s + p.lng, 0) / building.footprint.length;
+            const terrainH = await Buildings.getTerrainHeight(viewer, centLat, centLng);
+
+            const position = Cesium.Cartesian3.fromDegrees(centLng, centLat, terrainH);
+            const hpr = new Cesium.HeadingPitchRoll(0, 0, 0);
+            const orientation = Cesium.Transforms.headingPitchRollQuaternion(position, hpr);
+
+            const modelEntity = viewer.entities.add({
+                name: building.id + '_model',
+                position: position,
+                orientation: orientation,
+                model: {
+                    uri: glbUrl,
+                    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                    scale: 1.0
+                }
+            });
+            building.modelEntity = modelEntity;
+
+            // Store generation config for future editing
+            building.generationConfig = {
+                floorConfigs: { ...window._floorConfigs },
+                door: door,
+                colors: { ...config.colors },
+                roofType: config.roofType,
+                roofPitch: config.roofPitch,
+                parapet: config.parapet,
+                parapetHeight: config.parapetHeight
+            };
+
+            const action = existingBuilding ? 'Regenerated' : 'Created';
+            setStatus(`${action} 3D building (${building.width}m × ${building.depth}m, ${storeys} floors)`);
+
+            // Clear edit mode
+            window._editingBuildingId = null;
+
         } catch (e) {
             setStatus('Error generating model: ' + e.message);
             console.error('Generate error:', e);
@@ -862,6 +944,8 @@ function setupBuildingToolUI() {
             window._floorConfigs = {};
             window._currentFloor = 'all';
             window._currentWall = 'all';
+            window._editingBuildingId = null;
+            generateBtn.textContent = 'Generate 3D Model';
         }
 
         if (mode === 'idle') {
@@ -880,6 +964,8 @@ function selectCustomBuilding(entity) {
     if (!entity) {
         selectedCustomBuilding = null;
         document.getElementById('infoBox').classList.add('hidden');
+        // Hide edit panel when deselecting
+        document.getElementById('editPanel')?.classList.add('hidden');
         return;
     }
 
@@ -887,7 +973,8 @@ function selectCustomBuilding(entity) {
     if (!building) return;
     selectedCustomBuilding = building;
 
-    // Show properties in info box
+    // Show properties in info box with edit + delete buttons
+    const has3D = !!building.modelEntity;
     document.getElementById('infoContent').innerHTML = `
         <table>
             <tr><td>ID</td><td>${building.id}</td></tr>
@@ -896,8 +983,12 @@ function selectCustomBuilding(entity) {
             <tr><td>Height</td><td>${building.height}m</td></tr>
             <tr><td>Storeys</td><td>${building.storeys}</td></tr>
             <tr><td>Area</td><td>${building.area} m&sup2;</td></tr>
+            <tr><td>Model</td><td>${has3D ? '3D generated' : 'Flat extrusion'}</td></tr>
         </table>
-        <button onclick="deleteSelectedCustomBuilding()" style="margin-top:8px;padding:5px 12px;border:none;border-radius:4px;background:#c0392b;color:white;cursor:pointer;font-size:12px;width:100%;">Delete Building</button>`;
+        <div style="display:flex;gap:6px;margin-top:8px;">
+            <button onclick="editSelectedCustomBuilding()" style="flex:1;padding:5px 12px;border:none;border-radius:4px;background:#2a9d8f;color:white;cursor:pointer;font-size:12px;">Edit</button>
+            <button onclick="deleteSelectedCustomBuilding()" style="flex:1;padding:5px 12px;border:none;border-radius:4px;background:#c0392b;color:white;cursor:pointer;font-size:12px;">Delete</button>
+        </div>`;
     document.getElementById('infoBox').classList.remove('hidden');
 
     // Sync config panel to this building's values
@@ -908,6 +999,115 @@ function selectCustomBuilding(entity) {
         const s = parseInt(btn.dataset.storeys);
         btn.classList.toggle('active', s === building.storeys || (s === 6 && building.storeys >= 6));
     });
+}
+
+function editSelectedCustomBuilding() {
+    if (!selectedCustomBuilding) return;
+    const building = selectedCustomBuilding;
+
+    // Show the config panel in edit mode
+    const configDiv = document.getElementById('buildToolConfig');
+    const idleDiv = document.getElementById('buildToolIdle');
+    const drawDiv = document.getElementById('buildToolDrawing');
+
+    idleDiv.classList.add('hidden');
+    drawDiv.classList.add('hidden');
+    configDiv.classList.remove('hidden');
+
+    // Load building dimensions
+    document.getElementById('customWidth').textContent = building.width + 'm';
+    document.getElementById('customDepth').textContent = building.depth + 'm';
+    document.getElementById('customArea').textContent = building.area + ' m²';
+    document.getElementById('buildHeightSlider').value = building.height;
+    document.getElementById('heightValue').textContent = building.height + 'm';
+    document.getElementById('buildColorPicker').value = building.color;
+
+    const storeys = building.storeys;
+    document.querySelectorAll('.storey-btn').forEach(btn => {
+        const s = parseInt(btn.dataset.storeys);
+        btn.classList.toggle('active', s === storeys || (s === 6 && storeys >= 6));
+    });
+
+    // Restore saved generation config if available
+    if (building.generationConfig) {
+        window._floorConfigs = { ...building.generationConfig.floorConfigs };
+        if (building.generationConfig.door) {
+            document.getElementById('addDoorChk').checked = true;
+            document.getElementById('doorWidthSlider').value = building.generationConfig.door.width;
+            document.getElementById('doorWidthVal').textContent = building.generationConfig.door.width + 'm';
+            document.getElementById('doorHeightSlider').value = building.generationConfig.door.height;
+            document.getElementById('doorHeightVal').textContent = building.generationConfig.door.height + 'm';
+            document.getElementById('doorWallSlider').value = building.generationConfig.door.wallIndex;
+            document.getElementById('doorWallVal').textContent = building.generationConfig.door.wallIndex + 1;
+            document.getElementById('doorPosSlider').value = building.generationConfig.door.position * 100;
+            document.getElementById('doorPosVal').textContent = Math.round(building.generationConfig.door.position * 100) + '%';
+        }
+        if (building.generationConfig.colors) {
+            document.getElementById('glassColorPicker').value = building.generationConfig.colors.glass || '#446688';
+            document.getElementById('frameColorPicker').value = building.generationConfig.colors.frame || '#888888';
+        }
+        document.getElementById('addParapetChk').checked = building.generationConfig.parapet !== false;
+        if (building.generationConfig.parapetHeight) {
+            document.getElementById('parapetHeightSlider').value = building.generationConfig.parapetHeight;
+            document.getElementById('parapetHeightVal').textContent = building.generationConfig.parapetHeight + 'm';
+        }
+        // Restore roof settings
+        const roofType = building.generationConfig.roofType || 'flat';
+        window._roofType = roofType;
+        document.querySelectorAll('.roof-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.roof === roofType);
+        });
+        const isPitched = roofType !== 'flat';
+        document.getElementById('roofPitchRow').style.display = isPitched ? 'flex' : 'none';
+        document.getElementById('roofColorRow').style.display = isPitched ? 'flex' : 'none';
+        document.getElementById('parapetRow').style.display = isPitched ? 'none' : 'flex';
+        if (building.generationConfig.roofPitch) {
+            document.getElementById('roofPitchSlider').value = building.generationConfig.roofPitch;
+            document.getElementById('roofPitchVal').textContent = building.generationConfig.roofPitch + '°';
+        }
+        if (building.generationConfig.colors?.roof) {
+            document.getElementById('roofColorPicker').value = building.generationConfig.colors.roof;
+        }
+        // Load the current floor:wall config into sliders
+        window._currentFloor = 'all';
+        window._currentWall = 'all';
+        const cfg = window._floorConfigs['all:all'] || {};
+        if (cfg.count !== undefined) { document.getElementById('winCountSlider').value = cfg.count; document.getElementById('winCountVal').textContent = cfg.count === 0 ? 'auto' : cfg.count; }
+        if (cfg.width !== undefined) { document.getElementById('winWidthSlider').value = cfg.width; document.getElementById('winWidthVal').textContent = cfg.width + 'm'; }
+        if (cfg.height !== undefined) { document.getElementById('winHeightSlider').value = cfg.height; document.getElementById('winHeightVal').textContent = cfg.height + 'm'; }
+        if (cfg.sillHeight !== undefined) { document.getElementById('winSillSlider').value = cfg.sillHeight; document.getElementById('winSillVal').textContent = cfg.sillHeight + 'm'; }
+        if (cfg.offset !== undefined) { document.getElementById('winOffsetSlider').value = cfg.offset; document.getElementById('winOffsetVal').textContent = parseFloat(cfg.offset).toFixed(1) + 'm'; }
+    }
+
+    // Update floor/wall tabs based on building footprint
+    const floorTabs = document.getElementById('floorTabs');
+    floorTabs.innerHTML = '<button class="floor-tab active" data-floor="all">All</button>';
+    for (let i = 0; i < storeys; i++) {
+        const btn = document.createElement('button');
+        btn.className = 'floor-tab';
+        btn.dataset.floor = i;
+        btn.textContent = i + 1;
+        floorTabs.appendChild(btn);
+    }
+
+    const wallTabs = document.getElementById('wallTabs');
+    wallTabs.innerHTML = '<button class="wall-tab active" data-wall="all">All</button>';
+    for (let i = 0; i < building.footprint.length; i++) {
+        const btn = document.createElement('button');
+        btn.className = 'wall-tab';
+        btn.dataset.wall = i;
+        btn.textContent = i + 1;
+        wallTabs.appendChild(btn);
+    }
+    document.getElementById('doorWallSlider').max = building.footprint.length - 1;
+
+    // Enable generate button for regeneration
+    const generateBtn = document.getElementById('generateModelBtn');
+    generateBtn.textContent = 'Regenerate 3D';
+    if (window.BuildingGenerator) generateBtn.disabled = false;
+
+    // Mark that we're in edit mode
+    window._editingBuildingId = building.id;
 }
 
 function deleteSelectedCustomBuilding() {
