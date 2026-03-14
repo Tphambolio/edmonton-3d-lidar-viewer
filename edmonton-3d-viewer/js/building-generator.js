@@ -361,56 +361,24 @@ const BuildingGenerator = {
         const h = yTop - yBottom;
         const angle = Math.atan2(normX, normZ);
 
-        // Glass pane (recessed behind wall face)
+        // Glass pane (slightly recessed behind wall face for depth effect)
         const glass = new THREE.Mesh(new THREE.PlaneGeometry(w, h), glassMat);
-        const gcx = origin.x + dirX * (uLeft + w / 2) - normX * depth;
-        const gcz = origin.z + dirZ * (uLeft + w / 2) - normZ * depth;
+        const recessDist = Math.min(depth, 0.03); // subtle recess to avoid z-fighting
+        const gcx = origin.x + dirX * (uLeft + w / 2) - normX * recessDist;
+        const gcz = origin.z + dirZ * (uLeft + w / 2) - normZ * recessDist;
         glass.position.set(gcx, yBottom + h / 2, gcz);
         glass.rotation.y = angle;
         group.add(glass);
 
-        // Reveal quads (top, bottom, left, right sides of the recess)
-        // Top reveal
-        const topReveal = new THREE.Mesh(new THREE.PlaneGeometry(w, depth), frameMat);
-        topReveal.position.set(
-            origin.x + dirX * (uLeft + w / 2) - normX * depth / 2,
-            yTop,
-            origin.z + dirZ * (uLeft + w / 2) - normZ * depth / 2
-        );
-        topReveal.rotation.y = angle;
-        topReveal.rotation.x = Math.PI / 2;
-        group.add(topReveal);
-
-        // Bottom reveal (sill)
-        const botReveal = new THREE.Mesh(new THREE.PlaneGeometry(w, depth), frameMat);
-        botReveal.position.set(
-            origin.x + dirX * (uLeft + w / 2) - normX * depth / 2,
-            yBottom,
-            origin.z + dirZ * (uLeft + w / 2) - normZ * depth / 2
-        );
-        botReveal.rotation.y = angle;
-        botReveal.rotation.x = -Math.PI / 2;
-        group.add(botReveal);
-
-        // Left reveal
-        const leftReveal = new THREE.Mesh(new THREE.PlaneGeometry(depth, h), frameMat);
-        leftReveal.position.set(
-            origin.x + dirX * uLeft - normX * depth / 2,
-            yBottom + h / 2,
-            origin.z + dirZ * uLeft - normZ * depth / 2
-        );
-        leftReveal.rotation.y = angle + Math.PI / 2;
-        group.add(leftReveal);
-
-        // Right reveal
-        const rightReveal = new THREE.Mesh(new THREE.PlaneGeometry(depth, h), frameMat);
-        rightReveal.position.set(
-            origin.x + dirX * uRight - normX * depth / 2,
-            yBottom + h / 2,
-            origin.z + dirZ * uRight - normZ * depth / 2
-        );
-        rightReveal.rotation.y = angle - Math.PI / 2;
-        group.add(rightReveal);
+        // Thin frame border around the glass (rendered as a slightly larger pane behind)
+        const frameW = w + 0.06;
+        const frameH = h + 0.06;
+        const frame = new THREE.Mesh(new THREE.PlaneGeometry(frameW, frameH), frameMat);
+        const fcx = origin.x + dirX * (uLeft + w / 2) - normX * (recessDist + 0.002);
+        const fcz = origin.z + dirZ * (uLeft + w / 2) - normZ * (recessDist + 0.002);
+        frame.position.set(fcx, yBottom + h / 2, fcz);
+        frame.rotation.y = angle;
+        group.add(frame);
 
         return group;
     },
@@ -526,19 +494,24 @@ const BuildingGenerator = {
         const group = new THREE.Group();
         const pitchRad = pitchDeg * Math.PI / 180;
 
-        // Compute oriented bounding box
+        // Compute oriented bounding box (for ridge direction only)
         const obb = this._computeOBB(localPts);
-        // obb: { center, halfW, halfH, angle, axisU:{x,z}, axisV:{x,z} }
-        // axisU = along the longer dimension (ridge direction)
-        // axisV = across the shorter dimension (slope direction)
+
+        // Snap OBB corners to nearest actual footprint vertices
+        // so the roof edges align with the walls instead of overhanging
+        const obbCorners = this._obbCorners(obb);
+        const corners = obbCorners.map(c => {
+            let best = localPts[0], bestDist = Infinity;
+            for (const p of localPts) {
+                const d = (p.x - c.x) ** 2 + (p.z - c.z) ** 2;
+                if (d < bestDist) { bestDist = d; best = p; }
+            }
+            return { x: best.x, z: best.z };
+        });
 
         const ridgeHeight = obb.halfH * Math.tan(pitchRad);
 
         if (roofType === 'gable') {
-            // Ridge line runs along axisU at center, elevated by ridgeHeight
-            // Two sloped planes (left and right of ridge)
-            // Two triangular gable walls at each end
-
             const ridgeStart = {
                 x: obb.center.x - obb.axisU.x * obb.halfW,
                 z: obb.center.z - obb.axisU.z * obb.halfW
@@ -547,12 +520,6 @@ const BuildingGenerator = {
                 x: obb.center.x + obb.axisU.x * obb.halfW,
                 z: obb.center.z + obb.axisU.z * obb.halfW
             };
-
-            // 4 eave corners
-            const corners = this._obbCorners(obb);
-            // corners: [front-left, front-right, back-right, back-left]
-            // front = -axisU end, back = +axisU end
-            // left = -axisV side, right = +axisV side
 
             const ry = roofBase + ridgeHeight;
 
@@ -590,14 +557,12 @@ const BuildingGenerator = {
                 { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
                 roofMat);
 
-            // Gable wall triangles (front and back ends)
-            // Front gable (corners 0, 1, ridgeStart)
+            // Gable wall triangles
             this._addTriangle(group,
                 { x: corners[0].x, y: roofBase, z: corners[0].z },
                 { x: corners[1].x, y: roofBase, z: corners[1].z },
                 { x: ridgeStart.x, y: ry, z: ridgeStart.z },
                 wallMat);
-            // Back gable (corners 3, 2, ridgeEnd)
             this._addTriangle(group,
                 { x: corners[3].x, y: roofBase, z: corners[3].z },
                 { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
@@ -605,8 +570,6 @@ const BuildingGenerator = {
                 wallMat);
 
         } else if (roofType === 'hip') {
-            // All four sides slope inward. Ridge is shorter than the building.
-            const corners = this._obbCorners(obb);
             const ry = roofBase + ridgeHeight;
 
             // Ridge inset from ends
@@ -620,7 +583,7 @@ const BuildingGenerator = {
                 z: obb.center.z + obb.axisU.z * (obb.halfW - ridgeInset)
             };
 
-            // Left slope (2 triangles forming a trapezoid: corners 0,3 at eave, ridge above)
+            // Left slope
             this._addTriangle(group,
                 { x: corners[0].x, y: roofBase, z: corners[0].z },
                 { x: ridgeStart.x, y: ry, z: ridgeStart.z },
@@ -644,14 +607,14 @@ const BuildingGenerator = {
                 { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
                 roofMat);
 
-            // Front hip triangle (corners 0, 1, ridgeStart)
+            // Front hip triangle
             this._addTriangle(group,
                 { x: corners[0].x, y: roofBase, z: corners[0].z },
                 { x: corners[1].x, y: roofBase, z: corners[1].z },
                 { x: ridgeStart.x, y: ry, z: ridgeStart.z },
                 roofMat);
 
-            // Back hip triangle (corners 3, 2, ridgeEnd)
+            // Back hip triangle
             this._addTriangle(group,
                 { x: corners[3].x, y: roofBase, z: corners[3].z },
                 { x: ridgeEnd.x, y: ry, z: ridgeEnd.z },
@@ -659,13 +622,10 @@ const BuildingGenerator = {
                 roofMat);
 
         } else if (roofType === 'shed') {
-            // Single slope: one side stays at roofBase, opposite rises
-            const corners = this._obbCorners(obb);
             const shedHeight = obb.halfH * 2 * Math.tan(pitchRad);
             const highY = roofBase + shedHeight;
 
-            // Low edge: corners 0,3 (left side), High edge: corners 1,2 (right side)
-            // Two triangles forming a sloped quad
+            // Low edge: corners 0,3, High edge: corners 1,2
             this._addTriangle(group,
                 { x: corners[0].x, y: roofBase, z: corners[0].z },
                 { x: corners[1].x, y: highY, z: corners[1].z },
@@ -734,7 +694,7 @@ const BuildingGenerator = {
         if (halfH > halfW) {
             // Swap so U is always the longer axis
             [halfW, halfH] = [halfH, halfW];
-            [axisU, axisV] = [axisV, { x: -axisV.x, z: -axisV.z }];
+            [axisU, axisV] = [axisV, { x: -axisU.x, z: -axisU.z }];
         }
 
         return { center: { x: cx, z: cz }, halfW, halfH, axisU, axisV };
