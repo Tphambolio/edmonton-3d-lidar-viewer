@@ -181,17 +181,33 @@ function setupUI() {
         }
     });
 
-    // Apply pre-built model
+    // Apply pre-built model — works on SODA buildings or custom footprints
     applyModelBtn.addEventListener('click', async () => {
         const selectedId = modelSelect.value;
-        if (!selectedId || !Buildings.selectedEntity) return;
         const model = Buildings.MODEL_CATALOG.find(m => m.id === selectedId);
-        if (!model) return;
-        setStatus(`Loading ${model.name}...`);
+        if (!selectedId || !model) return;
+
         applyModelBtn.disabled = true;
+        setStatus(`Loading ${model.name}...`);
+
         try {
-            await Buildings.replaceWithModel(viewer, Buildings.selectedEntity, model.url, model.scale);
-            setStatus(`Replaced building with ${model.name}`);
+            if (Buildings.selectedEntity) {
+                // Replace existing SODA building
+                await Buildings.replaceWithModel(viewer, Buildings.selectedEntity, model.url, model.scale);
+                setStatus(`Replaced building with ${model.name}`);
+            } else if (BuildingTool._points.length >= 3 && BuildingTool.mode === 'configuring') {
+                // Create a custom building from footprint, then apply model
+                const height = parseFloat(document.getElementById('buildHeightSlider').value) || 10;
+                const color = document.getElementById('buildColorPicker').value;
+                const building = await BuildingTool.createBuilding({ height, color });
+                if (building) {
+                    await Buildings.replaceWithModel(viewer, building.entity, model.url, model.scale);
+                    building.entity.show = false;
+                    setStatus(`Placed ${model.name} on custom footprint`);
+                }
+            } else {
+                setStatus('Draw a footprint or select a building first');
+            }
             rotateModelBtn.disabled = false;
         } catch (e) {
             setStatus(`Failed to load model: ${e.message}`);
@@ -199,13 +215,24 @@ function setupUI() {
         }
         applyModelBtn.disabled = false;
         updateStats();
+        updateBuildingList();
     });
 
-    // Model upload (file input)
+    // Model upload (file input) — works on SODA or custom footprint
     modelUpload.addEventListener('change', async (e) => {
         const file = e.target.files[0];
-        if (!file || !Buildings.selectedEntity) return;
-        await handleModelFile(file);
+        if (!file) return;
+        if (Buildings.selectedEntity) {
+            await handleModelFile(file);
+        } else if (BuildingTool._points.length >= 3 && BuildingTool.mode === 'configuring') {
+            const height = parseFloat(document.getElementById('buildHeightSlider').value) || 10;
+            const color = document.getElementById('buildColorPicker').value;
+            const building = await BuildingTool.createBuilding({ height, color });
+            if (building) {
+                Buildings.select(building.entity);
+                await handleModelFile(file);
+            }
+        }
     });
 
     // Model upload (drag & drop)
@@ -354,11 +381,8 @@ async function loadScene(lat, lng, radiusM) {
 
 function selectBuilding(entity) {
     Buildings.select(entity);
-    const uploadInput = document.getElementById('modelUpload');
     const selectedDiv = document.getElementById('selectedBuilding');
     const infoBox = document.getElementById('infoBox');
-    const modelSelect = document.getElementById('modelSelect');
-    const applyModelBtn = document.getElementById('applyModelBtn');
     const rotateModelBtn = document.getElementById('rotateModelBtn');
 
     if (entity) {
@@ -368,12 +392,13 @@ function selectBuilding(entity) {
         const height = props?.height?.getValue() || '?';
         const area = props?.area_m2?.getValue() || 0;
 
-        selectedDiv.textContent = `Selected: #${id} (${type}, ${height}m)`;
-        uploadInput.disabled = false;
-        modelSelect.disabled = false;
-        applyModelBtn.disabled = false;
+        // Show selected building bar in the building tool panel
+        selectedDiv.classList.remove('hidden');
+        selectedDiv.innerHTML = `#${id} &middot; ${type} &middot; ${height}m &middot; ${area.toFixed ? area.toFixed(0) : area}m&sup2; <span class="demolish-link" onclick="demolishBuilding(Buildings.selectedEntity)">Demolish</span>`;
+
         rotateModelBtn.disabled = !Buildings.customModels[id];
 
+        // Show info box
         document.getElementById('infoContent').innerHTML = `
             <table>
                 <tr><td>ID</td><td>${id}</td></tr>
@@ -383,13 +408,44 @@ function selectBuilding(entity) {
             </table>
             <button onclick="demolishBuilding(Buildings.selectedEntity)" style="margin-top:8px;padding:6px 12px;border:none;border-radius:4px;background:#c0392b;color:white;cursor:pointer;font-size:12px;width:100%;font-weight:600;">Demolish</button>`;
         infoBox.classList.remove('hidden');
+
+        // Extract footprint from the SODA building polygon and populate building tool
+        try {
+            const hierarchy = entity.polygon.hierarchy.getValue();
+            if (hierarchy && hierarchy.positions) {
+                const points = [];
+                for (const pos of hierarchy.positions) {
+                    const carto = Cesium.Cartographic.fromCartesian(pos);
+                    points.push({
+                        lat: Cesium.Math.toDegrees(carto.latitude),
+                        lng: Cesium.Math.toDegrees(carto.longitude),
+                        cartesian: pos
+                    });
+                }
+                if (points.length >= 3) {
+                    BuildingTool.cancel();
+                    BuildingTool._points = points;
+                    BuildingTool.mode = 'configuring';
+
+                    // Set height to match existing building
+                    const numHeight = parseFloat(height) || 10;
+                    const slider = document.getElementById('buildHeightSlider');
+                    if (slider) {
+                        slider.value = numHeight;
+                        document.getElementById('heightValue').textContent = numHeight + 'm';
+                    }
+
+                    BuildingTool._fireUpdate();
+                }
+            }
+        } catch (e) {
+            console.warn('Could not extract building footprint:', e);
+        }
     } else {
-        selectedDiv.textContent = 'No building selected';
-        uploadInput.disabled = true;
-        modelSelect.disabled = true;
-        applyModelBtn.disabled = true;
+        selectedDiv.classList.add('hidden');
+        selectedDiv.innerHTML = '';
         rotateModelBtn.disabled = true;
-        modelSelect.value = '';
+        document.getElementById('modelSelect').value = '';
         infoBox.classList.add('hidden');
     }
 }

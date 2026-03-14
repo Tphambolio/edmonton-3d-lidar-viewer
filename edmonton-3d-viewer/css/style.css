@@ -326,6 +326,63 @@ html, body, #cesiumContainer { width: 100%; height: 100%; overflow: hidden; }
     border-radius: 3px;
     border-left: 2px solid #2a9d8f;
 }
+.selected-building-bar {
+    padding: 6px 8px;
+    margin-bottom: 6px;
+    background: rgba(52, 152, 219, 0.2);
+    border-left: 3px solid #3498db;
+    border-radius: 3px;
+    font-size: 11px;
+    color: #8cc;
+}
+.selected-building-bar .demolish-link {
+    color: #e74c3c;
+    cursor: pointer;
+    margin-left: 6px;
+    text-decoration: underline;
+    font-size: 10px;
+}
+.model-upload-section {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+}
+.model-upload-section .config-group-title {
+    margin-bottom: 6px;
+}
+.model-upload-section .model-selector {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+.model-upload-section select {
+    flex: 1;
+    padding: 4px;
+    border-radius: 3px;
+    border: 1px solid #555;
+    background: #2a3a4a;
+    color: #ccc;
+    font-size: 11px;
+}
+.model-upload-section .upload-divider {
+    text-align: center;
+    font-size: 10px;
+    color: #667;
+    margin: 4px 0;
+}
+.model-upload-section input[type="file"] {
+    width: 100%;
+    font-size: 11px;
+    margin-bottom: 4px;
+}
+.model-upload-section .drop-zone {
+    border: 1px dashed #555;
+    border-radius: 4px;
+    padding: 8px;
+    text-align: center;
+    font-size: 10px;
+    color: #667;
+}
 
 .drawing-hint {
     font-size: 11px;
