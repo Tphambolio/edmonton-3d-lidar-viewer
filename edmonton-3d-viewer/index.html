@@ -4,6 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edmonton 3D Tree & Building Viewer</title>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+    }
+    </script>
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
@@ -57,6 +65,178 @@
             <div id="selectedBuilding">No building selected</div>
         </div>
 
+        <div class="building-tool-section">
+            <h3>Custom Building Tool</h3>
+            <div id="buildToolIdle">
+                <button id="drawBuildingBtn" class="btn-draw">Draw Building</button>
+            </div>
+            <div id="buildToolDrawing" class="hidden">
+                <p class="drawing-hint">Click on the map to place corners.<br>Double-click or press Done to finish.</p>
+                <div class="draw-controls">
+                    <span id="pointCount">Points: 0</span>
+                    <button id="undoPointBtn" disabled>Undo</button>
+                    <button id="doneDrawBtn" disabled>Done</button>
+                    <button id="cancelDrawBtn" class="btn-cancel">Cancel</button>
+                </div>
+            </div>
+            <div id="buildToolConfig" class="hidden">
+                <div class="dimension-row">
+                    <div class="dimension-box">
+                        <label>Width</label>
+                        <span id="customWidth">—</span>
+                    </div>
+                    <div class="dimension-box">
+                        <label>Depth</label>
+                        <span id="customDepth">—</span>
+                    </div>
+                    <div class="dimension-box">
+                        <label>Area</label>
+                        <span id="customArea">—</span>
+                    </div>
+                </div>
+                <label class="config-label">
+                    Height: <span id="heightValue">10m</span>
+                    <input type="range" id="buildHeightSlider" min="3" max="100" value="10" step="0.5">
+                </label>
+                <div class="storey-row">
+                    <span>Storeys:</span>
+                    <div class="storey-btns">
+                        <button class="storey-btn" data-storeys="1">1</button>
+                        <button class="storey-btn" data-storeys="2">2</button>
+                        <button class="storey-btn active" data-storeys="3">3</button>
+                        <button class="storey-btn" data-storeys="4">4</button>
+                        <button class="storey-btn" data-storeys="5">5</button>
+                        <button class="storey-btn" data-storeys="6">6+</button>
+                    </div>
+                </div>
+                <label class="config-label">
+                    Wall color: <input type="color" id="buildColorPicker" value="#CCBBAA">
+                </label>
+
+                <!-- Advanced: Window/Door/Floor Config -->
+                <div class="advanced-toggle" id="advancedToggle">
+                    <span>Windows & Doors</span>
+                    <span class="toggle-arrow">&#9654;</span>
+                </div>
+                <div id="advancedConfig" class="hidden">
+                    <!-- Floor selector tabs -->
+                    <div class="floor-selector">
+                        <span class="floor-label">Floor:</span>
+                        <div id="floorTabs" class="floor-tabs">
+                            <button class="floor-tab active" data-floor="all">All</button>
+                            <button class="floor-tab" data-floor="0">1</button>
+                            <button class="floor-tab" data-floor="1">2</button>
+                            <button class="floor-tab" data-floor="2">3</button>
+                        </div>
+                    </div>
+
+                    <!-- Wall selector for current floor -->
+                    <div class="wall-selector">
+                        <span class="wall-label">Wall:</span>
+                        <div id="wallTabs" class="wall-tabs">
+                            <button class="wall-tab active" data-wall="all">All</button>
+                        </div>
+                    </div>
+
+                    <!-- Window config -->
+                    <div class="config-group">
+                        <div class="config-group-title">Windows</div>
+                        <label class="config-label">
+                            Count: <span id="winCountVal">auto</span>
+                            <input type="range" id="winCountSlider" min="0" max="20" value="0" step="1">
+                        </label>
+                        <label class="config-label">
+                            Width: <span id="winWidthVal">1.2m</span>
+                            <input type="range" id="winWidthSlider" min="0.4" max="3.0" value="1.2" step="0.1">
+                        </label>
+                        <label class="config-label">
+                            Height: <span id="winHeightVal">1.4m</span>
+                            <input type="range" id="winHeightSlider" min="0.4" max="2.5" value="1.4" step="0.1">
+                        </label>
+                        <label class="config-label">
+                            Sill: <span id="winSillVal">0.9m</span>
+                            <input type="range" id="winSillSlider" min="0.3" max="2.0" value="0.9" step="0.1">
+                        </label>
+                        <label class="config-label">
+                            Offset: <span id="winOffsetVal">0.0m</span>
+                            <input type="range" id="winOffsetSlider" min="-5.0" max="5.0" value="0" step="0.1">
+                        </label>
+                    </div>
+
+                    <!-- Door config -->
+                    <div class="config-group">
+                        <div class="config-group-title">
+                            <label><input type="checkbox" id="addDoorChk" checked> Door (ground floor)</label>
+                        </div>
+                        <label class="config-label">
+                            Width: <span id="doorWidthVal">1.0m</span>
+                            <input type="range" id="doorWidthSlider" min="0.6" max="3.0" value="1.0" step="0.1">
+                        </label>
+                        <label class="config-label">
+                            Height: <span id="doorHeightVal">2.2m</span>
+                            <input type="range" id="doorHeightSlider" min="1.8" max="3.5" value="2.2" step="0.1">
+                        </label>
+                        <label class="config-label">
+                            Wall: <span id="doorWallVal">1</span>
+                            <input type="range" id="doorWallSlider" min="0" max="3" value="0" step="1">
+                        </label>
+                        <label class="config-label">
+                            Position: <span id="doorPosVal">50%</span>
+                            <input type="range" id="doorPosSlider" min="0" max="100" value="50" step="1">
+                        </label>
+                    </div>
+
+                    <!-- Material colors -->
+                    <div class="config-group">
+                        <div class="config-group-title">Materials</div>
+                        <label class="config-label">
+                            Glass: <input type="color" id="glassColorPicker" value="#446688">
+                        </label>
+                        <label class="config-label">
+                            Frame: <input type="color" id="frameColorPicker" value="#888888">
+                        </label>
+                    </div>
+
+                    <!-- Roof -->
+                    <div class="config-group">
+                        <div class="config-group-title">Roof</div>
+                        <div class="roof-type-row">
+                            <button class="roof-btn active" data-roof="flat">Flat</button>
+                            <button class="roof-btn" data-roof="gable">Gable</button>
+                            <button class="roof-btn" data-roof="hip">Hip</button>
+                            <button class="roof-btn" data-roof="shed">Shed</button>
+                        </div>
+                        <label class="config-label" id="roofPitchRow">
+                            Pitch: <span id="roofPitchVal">30°</span>
+                            <input type="range" id="roofPitchSlider" min="5" max="60" value="30" step="1">
+                        </label>
+                        <label class="config-label" id="roofColorRow">
+                            Color: <input type="color" id="roofColorPicker" value="#8B7355">
+                        </label>
+                        <label class="config-label" id="parapetRow">
+                            <input type="checkbox" id="addParapetChk" checked> Parapet
+                            <input type="range" id="parapetHeightSlider" min="0.3" max="1.5" value="0.6" step="0.1">
+                            <span id="parapetHeightVal">0.6m</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="config-actions">
+                    <button id="generateModelBtn" class="btn-generate" disabled>Generate 3D Model</button>
+                    <button id="createBuildingBtn" class="btn-create">Quick (flat)</button>
+                    <button id="resetFootprintBtn" class="btn-cancel">Reset</button>
+                </div>
+            </div>
+            <div id="customBuildingList" class="hidden">
+                <div id="customBuildingItems"></div>
+            </div>
+        </div>
+
+        <div id="demolishedList" class="demolished-section hidden">
+            <h3>Demolished Buildings</h3>
+            <div id="demolishedItems"></div>
+        </div>
+
         <div class="stats" id="stats"></div>
     </div>
 
@@ -68,7 +248,9 @@
 
     <script src="js/geocoder.js"></script>
     <script src="js/buildings.js"></script>
+    <script src="js/building-tool.js"></script>
     <script src="js/trees.js"></script>
     <script src="js/app.js"></script>
+    <script type="module" src="js/building-generator.js"></script>
 </body>
 </html>

@@ -73,8 +73,12 @@ async function init() {
     await Buildings.loadIndex();
     await Trees.loadIndex();
 
+    // Initialize custom building tool
+    BuildingTool.init(viewer);
+
     // Wire up UI
     setupUI();
+    setupBuildingToolUI();
     updateStats();
 }
 
@@ -128,12 +132,20 @@ function setupUI() {
     // Building click handler
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
     handler.setInputAction((click) => {
+        // Don't intercept clicks when BuildingTool is drawing
+        if (BuildingTool.mode === 'drawing') return;
+
         const picked = viewer.scene.pick(click.position);
         console.log('Picked:', picked);
         if (Cesium.defined(picked)) {
             // Entity pick (buildings)
             if (picked.id && picked.id.name?.startsWith('bldg_')) {
                 selectBuilding(picked.id);
+                return;
+            }
+            // Custom building pick
+            if (picked.id && picked.id.name?.startsWith('custom_build_')) {
+                selectCustomBuilding(picked.id);
                 return;
             }
             // 3D Tileset pick (trees) — ignore, don't deselect
@@ -143,6 +155,7 @@ function setupUI() {
             }
         }
         selectBuilding(null);
+        selectCustomBuilding(null);
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
     // Populate model dropdown from catalog
@@ -314,6 +327,8 @@ async function loadScene(lat, lng, radiusM) {
     // Clear previous data
     Buildings.clear(viewer);
     Trees.clear(viewer);
+    demolishedBuildings.length = 0;
+    updateDemolishedList();
 
     // Load buildings
     const bldgCount = await Buildings.loadAround(viewer, lat, lng, radiusM);
@@ -356,7 +371,8 @@ function selectBuilding(entity) {
                 <tr><td>Type</td><td>${type}</td></tr>
                 <tr><td>Height</td><td>${height}m</td></tr>
                 <tr><td>Area</td><td>${area.toFixed ? area.toFixed(0) : area} m&sup2;</td></tr>
-            </table>`;
+            </table>
+            <button onclick="demolishBuilding(Buildings.selectedEntity)" style="margin-top:8px;padding:6px 12px;border:none;border-radius:4px;background:#c0392b;color:white;cursor:pointer;font-size:12px;width:100%;font-weight:600;">Demolish</button>`;
         infoBox.classList.remove('hidden');
     } else {
         selectedDiv.textContent = 'No building selected';
@@ -440,15 +456,789 @@ async function handleModelFile(file) {
     updateStats();
 }
 
+// ——— Custom Building Tool UI ———
+
+let selectedCustomBuilding = null;
+window._editingBuildingId = null;
+
+// Demolished buildings tracker
+const demolishedBuildings = [];
+
+function demolishBuilding(entity) {
+    if (!entity) return;
+    const props = entity.properties;
+    const id = props?.buildingId?.getValue();
+    const type = props?.type?.getValue() || '?';
+    const height = props?.height?.getValue() || '?';
+    const area = props?.area_m2?.getValue() || 0;
+
+    entity.show = false;
+    demolishedBuildings.push({
+        entity,
+        id,
+        type,
+        height,
+        area
+    });
+
+    // Also hide any custom model that was on this building
+    if (Buildings.customModels[id]) {
+        Buildings.customModels[id].show = false;
+    }
+
+    selectBuilding(null);
+    updateDemolishedList();
+    updateStats();
+    setStatus(`Demolished building #${id} (${type}, ${height}m)`);
+}
+
+function restoreBuilding(index) {
+    if (index < 0 || index >= demolishedBuildings.length) return;
+    const item = demolishedBuildings[index];
+    item.entity.show = true;
+
+    // Restore custom model if any
+    if (Buildings.customModels[item.id]) {
+        Buildings.customModels[item.id].show = true;
+    }
+
+    demolishedBuildings.splice(index, 1);
+    updateDemolishedList();
+    updateStats();
+    setStatus(`Restored building #${item.id}`);
+}
+
+function restoreAllBuildings() {
+    for (const item of demolishedBuildings) {
+        item.entity.show = true;
+        if (Buildings.customModels[item.id]) {
+            Buildings.customModels[item.id].show = true;
+        }
+    }
+    demolishedBuildings.length = 0;
+    updateDemolishedList();
+    updateStats();
+    setStatus('Restored all demolished buildings');
+}
+
+function updateDemolishedList() {
+    const listDiv = document.getElementById('demolishedList');
+    if (!listDiv) return;
+
+    if (demolishedBuildings.length === 0) {
+        listDiv.classList.add('hidden');
+        return;
+    }
+
+    listDiv.classList.remove('hidden');
+    const itemsDiv = document.getElementById('demolishedItems');
+    itemsDiv.innerHTML = demolishedBuildings.map((b, i) => `
+        <div class="demolished-item">
+            <span class="item-info">#${b.id} (${b.type}, ${b.height}m, ${typeof b.area === 'number' ? b.area.toFixed(0) : b.area} m²)</span>
+            <button class="restore-btn" onclick="restoreBuilding(${i})" title="Undo demolish">&#8634;</button>
+        </div>
+    `).join('');
+    itemsDiv.innerHTML += `<button class="restore-all-btn" onclick="restoreAllBuildings()">Restore All</button>`;
+}
+
+function setupBuildingToolUI() {
+    const drawBtn = document.getElementById('drawBuildingBtn');
+    const cancelBtn = document.getElementById('cancelDrawBtn');
+    const undoBtn = document.getElementById('undoPointBtn');
+    const doneBtn = document.getElementById('doneDrawBtn');
+    const createBtn = document.getElementById('createBuildingBtn');
+    const resetBtn = document.getElementById('resetFootprintBtn');
+    const heightSlider = document.getElementById('buildHeightSlider');
+    const heightValue = document.getElementById('heightValue');
+    const colorPicker = document.getElementById('buildColorPicker');
+
+    // Draw button — activate drawing mode
+    drawBtn.addEventListener('click', () => {
+        BuildingTool.activate();
+    });
+
+    // Cancel drawing
+    cancelBtn.addEventListener('click', () => {
+        BuildingTool.cancel();
+    });
+
+    // Undo last point
+    undoBtn.addEventListener('click', () => {
+        BuildingTool.undoPoint();
+    });
+
+    // Done drawing
+    doneBtn.addEventListener('click', () => {
+        BuildingTool.completeFootprint();
+    });
+
+    // Height slider
+    heightSlider.addEventListener('input', () => {
+        const h = parseFloat(heightSlider.value);
+        heightValue.textContent = h + 'm';
+
+        // Update storey button highlights
+        const storeys = Math.round(h / 3.5);
+        document.querySelectorAll('.storey-btn').forEach(btn => {
+            const s = parseInt(btn.dataset.storeys);
+            btn.classList.toggle('active', s === storeys || (s === 6 && storeys >= 6));
+        });
+
+        // Live-update if editing an existing custom building
+        if (selectedCustomBuilding) {
+            BuildingTool.updateBuilding(selectedCustomBuilding.id, { height: h, storeys: Math.round(h / 3.5) });
+        }
+    });
+
+    // Storey quick-select buttons
+    document.querySelectorAll('.storey-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const storeys = parseInt(btn.dataset.storeys);
+            const height = storeys * 3.5;
+            heightSlider.value = height;
+            heightValue.textContent = height + 'm';
+            document.querySelectorAll('.storey-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            if (selectedCustomBuilding) {
+                BuildingTool.updateBuilding(selectedCustomBuilding.id, { height, storeys });
+            }
+        });
+    });
+
+    // Color picker
+    colorPicker.addEventListener('input', () => {
+        if (selectedCustomBuilding) {
+            BuildingTool.updateBuilding(selectedCustomBuilding.id, { color: colorPicker.value });
+        }
+    });
+
+    // Create building
+    createBtn.addEventListener('click', async () => {
+        const height = parseFloat(heightSlider.value);
+        const color = colorPicker.value;
+        const storeys = Math.round(height / 3.5);
+        createBtn.disabled = true;
+        createBtn.textContent = 'Creating...';
+        try {
+            const building = await BuildingTool.createBuilding({ height, color, storeys });
+            if (building) {
+                setStatus(`Created custom building (${building.width}m × ${building.depth}m × ${building.height}m)`);
+            }
+        } catch (e) {
+            setStatus('Error creating building: ' + e.message);
+            console.error('Create building error:', e);
+        }
+        createBtn.disabled = false;
+        createBtn.textContent = 'Create Building';
+        updateStats();
+        updateBuildingList();
+    });
+
+    // Reset footprint
+    resetBtn.addEventListener('click', () => {
+        BuildingTool.resetFootprint();
+    });
+
+    // ——— Advanced config: Windows & Doors ———
+
+    // Toggle advanced panel
+    const advancedToggle = document.getElementById('advancedToggle');
+    const advancedConfig = document.getElementById('advancedConfig');
+    advancedToggle.addEventListener('click', () => {
+        advancedToggle.classList.toggle('open');
+        advancedConfig.classList.toggle('hidden');
+    });
+
+    // Slider value display helpers
+    const sliderDisplay = (sliderId, displayId, suffix) => {
+        const slider = document.getElementById(sliderId);
+        const display = document.getElementById(displayId);
+        slider.addEventListener('input', () => {
+            display.textContent = slider.value + suffix;
+        });
+    };
+    sliderDisplay('winWidthSlider', 'winWidthVal', 'm');
+    sliderDisplay('winHeightSlider', 'winHeightVal', 'm');
+    sliderDisplay('winSillSlider', 'winSillVal', 'm');
+    sliderDisplay('doorWidthSlider', 'doorWidthVal', 'm');
+    sliderDisplay('doorHeightSlider', 'doorHeightVal', 'm');
+    sliderDisplay('parapetHeightSlider', 'parapetHeightVal', 'm');
+
+    // Roof type buttons
+    window._roofType = 'flat';
+    document.querySelectorAll('.roof-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.roof-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            window._roofType = btn.dataset.roof;
+
+            // Show/hide pitch slider and parapet based on roof type
+            const pitchRow = document.getElementById('roofPitchRow');
+            const roofColorRow = document.getElementById('roofColorRow');
+            const parapetRow = document.getElementById('parapetRow');
+            const isPitched = btn.dataset.roof !== 'flat';
+            pitchRow.style.display = isPitched ? 'flex' : 'none';
+            roofColorRow.style.display = isPitched ? 'flex' : 'none';
+            parapetRow.style.display = isPitched ? 'none' : 'flex';
+        });
+    });
+
+    // Roof pitch slider
+    const roofPitchSlider = document.getElementById('roofPitchSlider');
+    const roofPitchVal = document.getElementById('roofPitchVal');
+    roofPitchSlider.addEventListener('input', () => {
+        roofPitchVal.textContent = roofPitchSlider.value + '°';
+    });
+    // Initially hide pitch/color since default is flat
+    document.getElementById('roofPitchRow').style.display = 'none';
+    document.getElementById('roofColorRow').style.display = 'none';
+
+    // Window offset slider
+    const winOffsetSlider = document.getElementById('winOffsetSlider');
+    const winOffsetVal = document.getElementById('winOffsetVal');
+    winOffsetSlider.addEventListener('input', () => {
+        winOffsetVal.textContent = parseFloat(winOffsetSlider.value).toFixed(1) + 'm';
+    });
+
+    // Window count slider (0 = auto)
+    const winCountSlider = document.getElementById('winCountSlider');
+    const winCountVal = document.getElementById('winCountVal');
+    winCountSlider.addEventListener('input', () => {
+        winCountVal.textContent = winCountSlider.value === '0' ? 'auto' : winCountSlider.value;
+    });
+
+    // Door wall slider
+    const doorWallSlider = document.getElementById('doorWallSlider');
+    const doorWallVal = document.getElementById('doorWallVal');
+    doorWallSlider.addEventListener('input', () => {
+        doorWallVal.textContent = parseInt(doorWallSlider.value) + 1;
+    });
+
+    // Door position slider
+    const doorPosSlider = document.getElementById('doorPosSlider');
+    const doorPosVal = document.getElementById('doorPosVal');
+    doorPosSlider.addEventListener('input', () => {
+        doorPosVal.textContent = doorPosSlider.value + '%';
+    });
+
+    // Floor tabs — dynamically generated based on storey count
+    const updateFloorTabs = () => {
+        const storeys = Math.round(parseFloat(heightSlider.value) / 3.5);
+        const floorTabs = document.getElementById('floorTabs');
+        floorTabs.innerHTML = '<button class="floor-tab active" data-floor="all">All</button>';
+        for (let i = 0; i < Math.min(storeys, 20); i++) {
+            const btn = document.createElement('button');
+            btn.className = 'floor-tab';
+            btn.dataset.floor = i;
+            btn.textContent = i + 1;
+            floorTabs.appendChild(btn);
+        }
+        // Update door wall slider max based on footprint points
+        if (BuildingTool._points.length > 0) {
+            doorWallSlider.max = BuildingTool._points.length - 1;
+        }
+        setupFloorTabListeners();
+        setupWallTabs();
+    };
+
+    heightSlider.addEventListener('change', updateFloorTabs);
+
+    // Track current floor/wall selection for per-floor/wall config
+    window._currentFloor = 'all';
+    window._currentWall = 'all';
+    window._floorConfigs = {}; // keyed by "floor:wall"
+
+    const setupFloorTabListeners = () => {
+        document.querySelectorAll('.floor-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.floor-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                window._currentFloor = tab.dataset.floor;
+                loadConfigForSelection();
+            });
+        });
+    };
+
+    const setupWallTabs = () => {
+        const wallTabs = document.getElementById('wallTabs');
+        wallTabs.innerHTML = '<button class="wall-tab active" data-wall="all">All</button>';
+        const numWalls = BuildingTool._points.length || 4;
+        for (let i = 0; i < numWalls; i++) {
+            const btn = document.createElement('button');
+            btn.className = 'wall-tab';
+            btn.dataset.wall = i;
+            btn.textContent = i + 1;
+            wallTabs.appendChild(btn);
+        }
+        document.querySelectorAll('.wall-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.wall-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                window._currentWall = tab.dataset.wall;
+                loadConfigForSelection();
+            });
+        });
+    };
+
+    // Save current slider values to the current floor:wall config
+    const saveConfigForSelection = () => {
+        const key = `${window._currentFloor}:${window._currentWall}`;
+        window._floorConfigs[key] = {
+            count: parseInt(winCountSlider.value),
+            width: parseFloat(document.getElementById('winWidthSlider').value),
+            height: parseFloat(document.getElementById('winHeightSlider').value),
+            sillHeight: parseFloat(document.getElementById('winSillSlider').value),
+            offset: parseFloat(winOffsetSlider.value)
+        };
+    };
+
+    // Load config for the selected floor:wall into sliders
+    const loadConfigForSelection = () => {
+        const key = `${window._currentFloor}:${window._currentWall}`;
+        const cfg = window._floorConfigs[key] || window._floorConfigs['all:all'] || {};
+        if (cfg.count !== undefined) { winCountSlider.value = cfg.count; winCountVal.textContent = cfg.count === 0 ? 'auto' : cfg.count; }
+        if (cfg.width !== undefined) { document.getElementById('winWidthSlider').value = cfg.width; document.getElementById('winWidthVal').textContent = cfg.width + 'm'; }
+        if (cfg.height !== undefined) { document.getElementById('winHeightSlider').value = cfg.height; document.getElementById('winHeightVal').textContent = cfg.height + 'm'; }
+        if (cfg.sillHeight !== undefined) { document.getElementById('winSillSlider').value = cfg.sillHeight; document.getElementById('winSillVal').textContent = cfg.sillHeight + 'm'; }
+        if (cfg.offset !== undefined) { winOffsetSlider.value = cfg.offset; winOffsetVal.textContent = parseFloat(cfg.offset).toFixed(1) + 'm'; }
+    };
+
+    // Auto-save when any window slider changes
+    [winCountSlider, document.getElementById('winWidthSlider'), document.getElementById('winHeightSlider'),
+     document.getElementById('winSillSlider'), winOffsetSlider].forEach(slider => {
+        slider.addEventListener('change', saveConfigForSelection);
+    });
+
+    // Generate 3D Model button
+    const generateBtn = document.getElementById('generateModelBtn');
+
+    // Enable generate button when BuildingGenerator is ready
+    window.addEventListener('building-generator-ready', () => {
+        console.log('BuildingGenerator ready');
+        generateBtn.disabled = false;
+        generateBtn.title = '';
+    });
+
+    // Check periodically in case the event was missed or module is loading slowly
+    const checkGeneratorReady = () => {
+        if (window.BuildingGenerator) {
+            generateBtn.title = '';
+            return;
+        }
+        if (window._buildingGeneratorError) {
+            generateBtn.title = 'Three.js failed to load: ' + window._buildingGeneratorError;
+            console.error('BuildingGenerator load error:', window._buildingGeneratorError);
+            return;
+        }
+        setTimeout(checkGeneratorReady, 2000);
+    };
+    setTimeout(checkGeneratorReady, 3000);
+
+    generateBtn.addEventListener('click', async () => {
+        if (!window.BuildingGenerator) {
+            setStatus('3D generator still loading...');
+            return;
+        }
+
+        // Check if we're editing an existing building or creating new
+        const editingId = window._editingBuildingId;
+        const existingBuilding = editingId ? BuildingTool.buildings.find(b => b.id === editingId) : null;
+
+        if (!existingBuilding && BuildingTool._points.length < 3) {
+            setStatus('Draw a footprint first');
+            return;
+        }
+
+        generateBtn.disabled = true;
+        generateBtn.textContent = 'Generating...';
+        setStatus('Generating 3D building model...');
+
+        try {
+            // Save current config before generating
+            saveConfigForSelection();
+
+            // Ensure all:all has defaults if not set
+            if (!window._floorConfigs['all:all']) {
+                window._floorConfigs['all:all'] = {
+                    count: parseInt(winCountSlider.value),
+                    width: parseFloat(document.getElementById('winWidthSlider').value),
+                    height: parseFloat(document.getElementById('winHeightSlider').value),
+                    sillHeight: parseFloat(document.getElementById('winSillSlider').value),
+                    offset: parseFloat(winOffsetSlider.value)
+                };
+            }
+
+            const height = parseFloat(heightSlider.value);
+            const storeys = Math.round(height / 3.5);
+            const floorHeight = height / storeys;
+
+            const addDoor = document.getElementById('addDoorChk').checked;
+            const door = addDoor ? {
+                width: parseFloat(document.getElementById('doorWidthSlider').value),
+                height: parseFloat(document.getElementById('doorHeightSlider').value),
+                wallIndex: parseInt(doorWallSlider.value),
+                position: parseInt(doorPosSlider.value) / 100
+            } : null;
+
+            // Use existing footprint for regeneration, or current points for new
+            const footprint = existingBuilding
+                ? existingBuilding.footprint
+                : BuildingTool._points.map(p => ({ lat: p.lat, lng: p.lng }));
+
+            const config = {
+                footprint: footprint,
+                numFloors: storeys,
+                floorHeight: floorHeight,
+                colors: {
+                    wall: colorPicker.value,
+                    glass: document.getElementById('glassColorPicker').value,
+                    frame: document.getElementById('frameColorPicker').value,
+                    roof: document.getElementById('roofColorPicker').value
+                },
+                floorConfigs: { ...window._floorConfigs },
+                door: door,
+                roofType: window._roofType || 'flat',
+                roofPitch: parseFloat(document.getElementById('roofPitchSlider').value),
+                parapet: document.getElementById('addParapetChk').checked,
+                parapetHeight: parseFloat(document.getElementById('parapetHeightSlider').value)
+            };
+
+            const glbUrl = await window.BuildingGenerator.generate(config);
+
+            let building;
+
+            if (existingBuilding) {
+                // --- Regeneration: update existing building ---
+                building = existingBuilding;
+
+                // Remove old model entity
+                if (building.modelEntity) {
+                    viewer.entities.remove(building.modelEntity);
+                }
+                if (building.glbUrl) {
+                    URL.revokeObjectURL(building.glbUrl);
+                }
+
+                // Update building properties
+                building.height = height;
+                building.storeys = storeys;
+                building.color = colorPicker.value;
+                building.glbUrl = glbUrl;
+
+                // Update flat extrusion (hidden but keeps metadata)
+                building.entity.polygon.extrudedHeight = building.terrainH + height;
+                building.entity.polygon.material = Cesium.Color.fromCssColorString(colorPicker.value).withAlpha(0.85);
+                building.entity.show = false;
+            } else {
+                // --- New building ---
+                building = await BuildingTool.createBuilding({
+                    height, color: colorPicker.value, storeys
+                });
+                if (!building) throw new Error('Failed to create building entity');
+                building.entity.show = false;
+                building.glbUrl = glbUrl;
+            }
+
+            // Place/replace GLB model at building centroid
+            const centLat = building.footprint.reduce((s, p) => s + p.lat, 0) / building.footprint.length;
+            const centLng = building.footprint.reduce((s, p) => s + p.lng, 0) / building.footprint.length;
+            const terrainH = await Buildings.getTerrainHeight(viewer, centLat, centLng);
+
+            const position = Cesium.Cartesian3.fromDegrees(centLng, centLat, terrainH);
+            const hpr = new Cesium.HeadingPitchRoll(0, 0, 0);
+            const orientation = Cesium.Transforms.headingPitchRollQuaternion(position, hpr);
+
+            const modelEntity = viewer.entities.add({
+                name: building.id + '_model',
+                position: position,
+                orientation: orientation,
+                model: {
+                    uri: glbUrl,
+                    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                    scale: 1.0
+                }
+            });
+            building.modelEntity = modelEntity;
+
+            // Store generation config for future editing
+            building.generationConfig = {
+                floorConfigs: { ...window._floorConfigs },
+                door: door,
+                colors: { ...config.colors },
+                roofType: config.roofType,
+                roofPitch: config.roofPitch,
+                parapet: config.parapet,
+                parapetHeight: config.parapetHeight
+            };
+
+            const action = existingBuilding ? 'Regenerated' : 'Created';
+            setStatus(`${action} 3D building (${building.width}m × ${building.depth}m, ${storeys} floors)`);
+
+            // Clear edit mode
+            window._editingBuildingId = null;
+
+        } catch (e) {
+            setStatus('Error generating model: ' + e.message);
+            console.error('Generate error:', e);
+        }
+
+        generateBtn.disabled = false;
+        generateBtn.textContent = 'Generate 3D Model';
+        updateStats();
+        updateBuildingList();
+    });
+
+    // Listen for BuildingTool state changes
+    BuildingTool.onUpdate = (mode, pointCount) => {
+        const idleDiv = document.getElementById('buildToolIdle');
+        const drawDiv = document.getElementById('buildToolDrawing');
+        const configDiv = document.getElementById('buildToolConfig');
+        const pointCountEl = document.getElementById('pointCount');
+
+        idleDiv.classList.toggle('hidden', mode !== 'idle');
+        drawDiv.classList.toggle('hidden', mode !== 'drawing');
+        configDiv.classList.toggle('hidden', mode !== 'configuring');
+
+        if (mode === 'drawing') {
+            pointCountEl.textContent = `Points: ${pointCount}`;
+            undoBtn.disabled = pointCount === 0;
+            doneBtn.disabled = pointCount < 3;
+        }
+
+        if (mode === 'configuring') {
+            const dims = BuildingTool.getFootprintDimensions();
+            document.getElementById('customWidth').textContent = dims.width + 'm';
+            document.getElementById('customDepth').textContent = dims.depth + 'm';
+            document.getElementById('customArea').textContent = dims.area + ' m²';
+
+            // Enable generate button if BuildingGenerator is loaded
+            if (window.BuildingGenerator) {
+                generateBtn.disabled = false;
+            } else {
+                generateBtn.disabled = true;
+                generateBtn.title = 'Loading 3D generator...';
+            }
+
+            // Update floor tabs and wall tabs
+            updateFloorTabs();
+
+            // Reset floor configs for new building
+            window._floorConfigs = {};
+            window._currentFloor = 'all';
+            window._currentWall = 'all';
+            window._editingBuildingId = null;
+            generateBtn.textContent = 'Generate 3D Model';
+        }
+
+        if (mode === 'idle') {
+            generateBtn.disabled = true;
+        }
+
+        updateBuildingList();
+        updateStats();
+    };
+}
+
+function selectCustomBuilding(entity) {
+    // Deselect previous SODA building selection
+    selectBuilding(null);
+
+    if (!entity) {
+        selectedCustomBuilding = null;
+        document.getElementById('infoBox').classList.add('hidden');
+        // Hide edit panel when deselecting
+        document.getElementById('editPanel')?.classList.add('hidden');
+        return;
+    }
+
+    const building = BuildingTool.selectBuilding(entity);
+    if (!building) return;
+    selectedCustomBuilding = building;
+
+    // Show properties in info box with edit + delete buttons
+    const has3D = !!building.modelEntity;
+    document.getElementById('infoContent').innerHTML = `
+        <table>
+            <tr><td>ID</td><td>${building.id}</td></tr>
+            <tr><td>Width</td><td>${building.width}m</td></tr>
+            <tr><td>Depth</td><td>${building.depth}m</td></tr>
+            <tr><td>Height</td><td>${building.height}m</td></tr>
+            <tr><td>Storeys</td><td>${building.storeys}</td></tr>
+            <tr><td>Area</td><td>${building.area} m&sup2;</td></tr>
+            <tr><td>Model</td><td>${has3D ? '3D generated' : 'Flat extrusion'}</td></tr>
+        </table>
+        <div style="display:flex;gap:6px;margin-top:8px;">
+            <button onclick="editSelectedCustomBuilding()" style="flex:1;padding:5px 12px;border:none;border-radius:4px;background:#2a9d8f;color:white;cursor:pointer;font-size:12px;">Edit</button>
+            <button onclick="deleteSelectedCustomBuilding()" style="flex:1;padding:5px 12px;border:none;border-radius:4px;background:#c0392b;color:white;cursor:pointer;font-size:12px;">Delete</button>
+        </div>`;
+    document.getElementById('infoBox').classList.remove('hidden');
+
+    // Sync config panel to this building's values
+    document.getElementById('buildHeightSlider').value = building.height;
+    document.getElementById('heightValue').textContent = building.height + 'm';
+    document.getElementById('buildColorPicker').value = building.color;
+    document.querySelectorAll('.storey-btn').forEach(btn => {
+        const s = parseInt(btn.dataset.storeys);
+        btn.classList.toggle('active', s === building.storeys || (s === 6 && building.storeys >= 6));
+    });
+}
+
+function editSelectedCustomBuilding() {
+    if (!selectedCustomBuilding) return;
+    const building = selectedCustomBuilding;
+
+    // Show the config panel in edit mode
+    const configDiv = document.getElementById('buildToolConfig');
+    const idleDiv = document.getElementById('buildToolIdle');
+    const drawDiv = document.getElementById('buildToolDrawing');
+
+    idleDiv.classList.add('hidden');
+    drawDiv.classList.add('hidden');
+    configDiv.classList.remove('hidden');
+
+    // Load building dimensions
+    document.getElementById('customWidth').textContent = building.width + 'm';
+    document.getElementById('customDepth').textContent = building.depth + 'm';
+    document.getElementById('customArea').textContent = building.area + ' m²';
+    document.getElementById('buildHeightSlider').value = building.height;
+    document.getElementById('heightValue').textContent = building.height + 'm';
+    document.getElementById('buildColorPicker').value = building.color;
+
+    const storeys = building.storeys;
+    document.querySelectorAll('.storey-btn').forEach(btn => {
+        const s = parseInt(btn.dataset.storeys);
+        btn.classList.toggle('active', s === storeys || (s === 6 && storeys >= 6));
+    });
+
+    // Restore saved generation config if available
+    if (building.generationConfig) {
+        window._floorConfigs = { ...building.generationConfig.floorConfigs };
+        if (building.generationConfig.door) {
+            document.getElementById('addDoorChk').checked = true;
+            document.getElementById('doorWidthSlider').value = building.generationConfig.door.width;
+            document.getElementById('doorWidthVal').textContent = building.generationConfig.door.width + 'm';
+            document.getElementById('doorHeightSlider').value = building.generationConfig.door.height;
+            document.getElementById('doorHeightVal').textContent = building.generationConfig.door.height + 'm';
+            document.getElementById('doorWallSlider').value = building.generationConfig.door.wallIndex;
+            document.getElementById('doorWallVal').textContent = building.generationConfig.door.wallIndex + 1;
+            document.getElementById('doorPosSlider').value = building.generationConfig.door.position * 100;
+            document.getElementById('doorPosVal').textContent = Math.round(building.generationConfig.door.position * 100) + '%';
+        }
+        if (building.generationConfig.colors) {
+            document.getElementById('glassColorPicker').value = building.generationConfig.colors.glass || '#446688';
+            document.getElementById('frameColorPicker').value = building.generationConfig.colors.frame || '#888888';
+        }
+        document.getElementById('addParapetChk').checked = building.generationConfig.parapet !== false;
+        if (building.generationConfig.parapetHeight) {
+            document.getElementById('parapetHeightSlider').value = building.generationConfig.parapetHeight;
+            document.getElementById('parapetHeightVal').textContent = building.generationConfig.parapetHeight + 'm';
+        }
+        // Restore roof settings
+        const roofType = building.generationConfig.roofType || 'flat';
+        window._roofType = roofType;
+        document.querySelectorAll('.roof-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.roof === roofType);
+        });
+        const isPitched = roofType !== 'flat';
+        document.getElementById('roofPitchRow').style.display = isPitched ? 'flex' : 'none';
+        document.getElementById('roofColorRow').style.display = isPitched ? 'flex' : 'none';
+        document.getElementById('parapetRow').style.display = isPitched ? 'none' : 'flex';
+        if (building.generationConfig.roofPitch) {
+            document.getElementById('roofPitchSlider').value = building.generationConfig.roofPitch;
+            document.getElementById('roofPitchVal').textContent = building.generationConfig.roofPitch + '°';
+        }
+        if (building.generationConfig.colors?.roof) {
+            document.getElementById('roofColorPicker').value = building.generationConfig.colors.roof;
+        }
+        // Load the current floor:wall config into sliders
+        window._currentFloor = 'all';
+        window._currentWall = 'all';
+        const cfg = window._floorConfigs['all:all'] || {};
+        if (cfg.count !== undefined) { document.getElementById('winCountSlider').value = cfg.count; document.getElementById('winCountVal').textContent = cfg.count === 0 ? 'auto' : cfg.count; }
+        if (cfg.width !== undefined) { document.getElementById('winWidthSlider').value = cfg.width; document.getElementById('winWidthVal').textContent = cfg.width + 'm'; }
+        if (cfg.height !== undefined) { document.getElementById('winHeightSlider').value = cfg.height; document.getElementById('winHeightVal').textContent = cfg.height + 'm'; }
+        if (cfg.sillHeight !== undefined) { document.getElementById('winSillSlider').value = cfg.sillHeight; document.getElementById('winSillVal').textContent = cfg.sillHeight + 'm'; }
+        if (cfg.offset !== undefined) { document.getElementById('winOffsetSlider').value = cfg.offset; document.getElementById('winOffsetVal').textContent = parseFloat(cfg.offset).toFixed(1) + 'm'; }
+    }
+
+    // Update floor/wall tabs based on building footprint
+    const floorTabs = document.getElementById('floorTabs');
+    floorTabs.innerHTML = '<button class="floor-tab active" data-floor="all">All</button>';
+    for (let i = 0; i < storeys; i++) {
+        const btn = document.createElement('button');
+        btn.className = 'floor-tab';
+        btn.dataset.floor = i;
+        btn.textContent = i + 1;
+        floorTabs.appendChild(btn);
+    }
+
+    const wallTabs = document.getElementById('wallTabs');
+    wallTabs.innerHTML = '<button class="wall-tab active" data-wall="all">All</button>';
+    for (let i = 0; i < building.footprint.length; i++) {
+        const btn = document.createElement('button');
+        btn.className = 'wall-tab';
+        btn.dataset.wall = i;
+        btn.textContent = i + 1;
+        wallTabs.appendChild(btn);
+    }
+    document.getElementById('doorWallSlider').max = building.footprint.length - 1;
+
+    // Enable generate button for regeneration
+    const generateBtn = document.getElementById('generateModelBtn');
+    generateBtn.textContent = 'Regenerate 3D';
+    if (window.BuildingGenerator) generateBtn.disabled = false;
+
+    // Mark that we're in edit mode
+    window._editingBuildingId = building.id;
+}
+
+function deleteSelectedCustomBuilding() {
+    if (!selectedCustomBuilding) return;
+    BuildingTool.deleteBuilding(selectedCustomBuilding.id);
+    selectedCustomBuilding = null;
+    document.getElementById('infoBox').classList.add('hidden');
+    updateBuildingList();
+    updateStats();
+}
+
+function updateBuildingList() {
+    const listDiv = document.getElementById('customBuildingList');
+    const itemsDiv = document.getElementById('customBuildingItems');
+
+    if (BuildingTool.buildings.length === 0) {
+        listDiv.classList.add('hidden');
+        return;
+    }
+
+    listDiv.classList.remove('hidden');
+    itemsDiv.innerHTML = BuildingTool.buildings.map(b => `
+        <div class="custom-building-item" onclick="flyToCustomBuilding('${b.id}')">
+            <div class="color-swatch" style="background:${b.color}"></div>
+            <span class="item-info">${b.width}m × ${b.depth}m × ${b.height}m</span>
+            <button class="delete-btn" onclick="event.stopPropagation(); BuildingTool.deleteBuilding('${b.id}'); updateBuildingList(); updateStats();">&times;</button>
+        </div>
+    `).join('');
+}
+
+function flyToCustomBuilding(id) {
+    const building = BuildingTool.buildings.find(b => b.id === id);
+    if (!building || !building.entity) return;
+    viewer.flyTo(building.entity, { duration: 1 });
+}
+
 function setStatus(msg) {
     document.getElementById('searchStatus').textContent = msg;
 }
 
 function updateStats() {
     const stats = document.getElementById('stats');
+    const demolished = demolishedBuildings.length;
     stats.textContent = `Buildings: ${Buildings.entities.length} | ` +
         `Tree tilesets: ${Trees.loadedTiles.size} | ` +
-        `Custom models: ${Object.keys(Buildings.customModels).length}`;
+        `Custom models: ${Object.keys(Buildings.customModels).length} | ` +
+        `Custom buildings: ${BuildingTool.buildings.length}` +
+        (demolished ? ` | Demolished: ${demolished}` : '');
 }
 
 // Close info box
