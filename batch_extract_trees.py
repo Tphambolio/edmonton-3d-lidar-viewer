@@ -238,15 +238,11 @@ def tint_tree_colors(colors, conifer_score):
     """
     c = colors.astype(np.float32)
 
-    # --- Step 1: Lift only the deepest shadows, keep dark greens rich ---
-    # Only lift the blackest pixels (< 35), preserve the rest.
-    # This keeps dark foliage dark (= rich) while removing harsh black.
-    floor_val = 40.0
-    c = np.maximum(c, floor_val)
+    # --- Step 1: Moderate shadow lift ---
+    c = 255.0 * (c / 255.0) ** 0.75   # gamma 0.75: opens up shadows
+    c = np.maximum(c, 50.0)            # floor: no pure blacks
 
     # --- Step 2: Strong saturation boost + green channel push ---
-    # Aerial canopy RGB is grey-olive due to mixed pixels and sensor response.
-    # Aggressively boost saturation and push green to get vibrant foliage.
     grey = 0.299 * c[:, 0] + 0.587 * c[:, 1] + 0.114 * c[:, 2]
     sat_boost = 1.80  # 80% more saturated — makes greens pop
     for ch in range(3):
@@ -256,6 +252,18 @@ def tint_tree_colors(colors, conifer_score):
     c[:, 1] *= 1.25   # 25% green boost
     c[:, 0] *= 0.78   # 22% red reduction (removes grey/brown cast)
     c[:, 2] *= 0.72   # 28% blue reduction (removes mint/cool cast)
+
+    # --- Step 2b: Compress dark outliers toward median ---
+    # Shadow pixels create dark splotches after saturation boost.
+    # Pull any dark vertices toward the median so shadows are subtle.
+    lum = 0.299 * c[:, 0] + 0.587 * c[:, 1] + 0.114 * c[:, 2]
+    med_lum = np.median(lum)
+    dark_thresh = med_lum * 0.70       # vertices below 70% of median
+    dark_mask = lum < dark_thresh
+    if dark_mask.any():
+        # Blend dark pixels 80% toward the median color
+        med_color = np.median(c, axis=0)
+        c[dark_mask] = c[dark_mask] * 0.2 + med_color * 0.8
 
     # --- Step 3: Apply conifer/deciduous tint (subtle) ---
     if conifer_score > 0.4:
