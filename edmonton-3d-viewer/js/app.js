@@ -1096,7 +1096,9 @@ function setupBuildingToolUI() {
             const terrainH = await Buildings.getTerrainHeight(viewer, centLat, centLng);
 
             const position = Cesium.Cartesian3.fromDegrees(centLng, centLat, terrainH);
-            const hpr = new Cesium.HeadingPitchRoll(0, 0, 0);
+            // CesiumJS Entity API maps model +X to North with heading=0.
+            // Our model is built with +X=East, so rotate 90° CW to align correctly.
+            const hpr = new Cesium.HeadingPitchRoll(Cesium.Math.PI_OVER_TWO, 0, 0);
             const orientation = Cesium.Transforms.headingPitchRollQuaternion(position, hpr);
 
             const modelEntity = viewer.entities.add({
@@ -1382,7 +1384,7 @@ async function nudgeBuilding(building, dLat, dLng) {
     if (building.modelEntity) {
         const newPos = Cesium.Cartesian3.fromDegrees(centLng, centLat, terrainH);
         building.modelEntity.position = newPos;
-        const hpr = new Cesium.HeadingPitchRoll(0, 0, 0);
+        const hpr = new Cesium.HeadingPitchRoll(Cesium.Math.PI_OVER_TWO, 0, 0);
         building.modelEntity.orientation = Cesium.Transforms.headingPitchRollQuaternion(newPos, hpr);
     }
 }

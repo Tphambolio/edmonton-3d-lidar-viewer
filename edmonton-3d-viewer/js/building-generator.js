@@ -707,11 +707,11 @@ const BuildingGenerator = {
         const cosLat = Math.cos(centLat * Math.PI / 180);
         const DEG_TO_M = 111000;
 
-        // CesiumJS Entity API convention: model +X = forward (north), +Z = right (east)
-        // With heading=0, +X points north and +Z points east on the map
+        // X = east (longitude), Z = south (negative latitude)
+        // glTF convention: -Z is forward (north), Y is up
         return footprint.map(p => ({
-            x: (p.lat - centLat) * DEG_TO_M,
-            z: (p.lng - centLng) * cosLat * DEG_TO_M
+            x: (p.lng - centLng) * cosLat * DEG_TO_M,
+            z: -(p.lat - centLat) * DEG_TO_M
         }));
     },
 
