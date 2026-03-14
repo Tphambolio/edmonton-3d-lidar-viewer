@@ -40,7 +40,7 @@ OUTPUT_DIR = os.path.join(LAZ_DIR, "edmonton-3d-viewer", "data", "tree_tiles")
 
 BOX_SIZE = 512
 MIN_TREE_HEIGHT = 3.0
-TREE_VOXEL = 0.4
+TREE_VOXEL = 0.6
 TREE_SIGMA = 1.2
 CLUSTER_CELL = 2.5
 MIN_CLUSTER_PTS = 80
