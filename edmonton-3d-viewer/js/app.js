@@ -731,13 +731,17 @@ function restorePlacementUI() {
     if (idleBtns) {
         idleBtns.innerHTML = `
             <button id="placeBuildingBtn" class="btn-draw">Place on Map</button>
-            <button id="drawBuildingBtn" class="btn-draw btn-draw-alt">Draw Custom</button>
+            <button id="rectDrawBtn" class="btn-draw btn-rect" title="Draw rectangle: click two opposite corners">Rectangle</button>
+            <button id="drawBuildingBtn" class="btn-draw btn-draw-alt" title="Freeform polygon: click each corner">Draw</button>
         `;
         // Re-attach event listeners
         document.getElementById('placeBuildingBtn').addEventListener('click', () => {
             const w = parseFloat(document.getElementById('inputWidth').value) || 12;
             const d = parseFloat(document.getElementById('inputDepth').value) || 10;
             startPlacementMode(w, d);
+        });
+        document.getElementById('rectDrawBtn').addEventListener('click', () => {
+            BuildingTool.activateRectangle();
         });
         document.getElementById('drawBuildingBtn').addEventListener('click', () => {
             BuildingTool.activate();
@@ -770,6 +774,42 @@ function setupBuildingToolUI() {
     // Draw button — activate freeform drawing mode
     drawBtn.addEventListener('click', () => {
         BuildingTool.activate();
+    });
+
+    // Rectangle draw button — 2-click rectangle mode
+    const rectBtn = document.getElementById('rectDrawBtn');
+    rectBtn.addEventListener('click', () => {
+        BuildingTool.activateRectangle();
+    });
+
+    // Orthogonalize button — snap polygon to right angles
+    const orthBtn = document.getElementById('orthogonalizeBtn');
+    orthBtn.addEventListener('click', () => {
+        BuildingTool.orthogonalize();
+    });
+
+    // Edit Vertices button — enter vertex editing mode
+    const editVertBtn = document.getElementById('editVerticesBtn');
+    editVertBtn.addEventListener('click', () => {
+        if (BuildingTool.mode === 'editing_vertices') {
+            BuildingTool.finishVertexEditing();
+            editVertBtn.classList.remove('active');
+            editVertBtn.textContent = 'Edit Vertices';
+        } else {
+            BuildingTool.activateVertexEditing();
+            editVertBtn.classList.add('active');
+            editVertBtn.textContent = 'Done Editing';
+        }
+    });
+
+    // Keyboard shortcut: Q for orthogonalize
+    document.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'q' || e.key === 'Q') {
+            if (BuildingTool.mode === 'configuring' || BuildingTool.mode === 'editing_vertices') {
+                BuildingTool.orthogonalize();
+            }
+        }
     });
 
     // Cancel drawing
@@ -1212,18 +1252,35 @@ function setupBuildingToolUI() {
         const drawDiv = document.getElementById('buildToolDrawing');
         const configDiv = document.getElementById('buildToolConfig');
         const pointCountEl = document.getElementById('pointCount');
+        const drawingHint = document.getElementById('drawingHint');
+
+        const isDrawing = mode === 'drawing' || mode === 'rect_first' || mode === 'rect_second';
+        const isConfig = mode === 'configuring' || mode === 'editing_vertices';
 
         idleDiv.classList.toggle('hidden', mode !== 'idle');
-        drawDiv.classList.toggle('hidden', mode !== 'drawing');
-        configDiv.classList.toggle('hidden', mode !== 'configuring');
+        drawDiv.classList.toggle('hidden', !isDrawing);
+        configDiv.classList.toggle('hidden', !isConfig);
 
-        if (mode === 'drawing') {
-            pointCountEl.textContent = `Points: ${pointCount}`;
-            undoBtn.disabled = pointCount === 0;
-            doneBtn.disabled = pointCount < 3;
+        if (isDrawing) {
+            if (mode === 'rect_first') {
+                drawingHint.innerHTML = 'Click to set the <b>first corner</b> of the rectangle.';
+                pointCountEl.textContent = 'Rectangle mode';
+                undoBtn.disabled = true;
+                doneBtn.disabled = true;
+            } else if (mode === 'rect_second') {
+                drawingHint.innerHTML = 'Click to set the <b>opposite corner</b>. Right-click to restart.';
+                pointCountEl.textContent = 'Rectangle mode';
+                undoBtn.disabled = true;
+                doneBtn.disabled = true;
+            } else {
+                drawingHint.innerHTML = 'Click on the map to place corners.<br>Double-click or press Done to finish.';
+                pointCountEl.textContent = `Points: ${pointCount}`;
+                undoBtn.disabled = pointCount === 0;
+                doneBtn.disabled = pointCount < 3;
+            }
         }
 
-        if (mode === 'configuring') {
+        if (isConfig) {
             const dims = BuildingTool.getFootprintDimensions();
             document.getElementById('customWidth').textContent = dims.width + 'm';
             document.getElementById('customDepth').textContent = dims.depth + 'm';
@@ -1240,12 +1297,24 @@ function setupBuildingToolUI() {
             // Update floor tabs and wall tabs
             updateFloorTabs();
 
-            // Reset floor configs for new building
-            window._floorConfigs = {};
-            window._currentFloor = 'all';
-            window._currentWall = 'all';
-            window._editingBuildingId = null;
-            generateBtn.textContent = 'Generate 3D Model';
+            // Reset floor configs for new building (only on first enter)
+            if (mode === 'configuring') {
+                window._floorConfigs = {};
+                window._currentFloor = 'all';
+                window._currentWall = 'all';
+                window._editingBuildingId = null;
+                generateBtn.textContent = 'Generate 3D Model';
+            }
+
+            // Update edit vertices button state
+            const editVertBtn = document.getElementById('editVerticesBtn');
+            if (mode === 'editing_vertices') {
+                editVertBtn.classList.add('active');
+                editVertBtn.textContent = 'Done Editing';
+            } else {
+                editVertBtn.classList.remove('active');
+                editVertBtn.textContent = 'Edit Vertices';
+            }
         }
 
         if (mode === 'idle') {
