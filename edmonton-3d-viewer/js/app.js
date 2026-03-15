@@ -1379,6 +1379,9 @@ let _pastePreview = null;
 function startPasteMode() {
     if (!BuildingTool.hasClipboard() || BuildingTool.mode !== 'idle') return;
 
+    // Clean up any existing paste mode before starting a new one
+    cleanupPasteMode();
+
     const canvas = viewer.scene.canvas;
     canvas.style.cursor = 'crosshair';
     setStatus('Click to paste building. Press Escape to cancel.');
@@ -1444,6 +1447,8 @@ function startPasteMode() {
                 document.getElementById('addDoorChk').checked = true;
                 document.getElementById('doorWidthSlider').value = clipboard.generationConfig.door.width;
                 document.getElementById('doorHeightSlider').value = clipboard.generationConfig.door.height;
+            } else {
+                document.getElementById('addDoorChk').checked = false;
             }
             if (clipboard.generationConfig.colors) {
                 document.getElementById('glassColorPicker').value = clipboard.generationConfig.colors.glass || '#446688';
@@ -1705,6 +1710,8 @@ function editSelectedCustomBuilding() {
             document.getElementById('doorWallVal').textContent = building.generationConfig.door.wallIndex + 1;
             document.getElementById('doorPosSlider').value = building.generationConfig.door.position * 100;
             document.getElementById('doorPosVal').textContent = Math.round(building.generationConfig.door.position * 100) + '%';
+        } else {
+            document.getElementById('addDoorChk').checked = false;
         }
         if (building.generationConfig.colors) {
             document.getElementById('glassColorPicker').value = building.generationConfig.colors.glass || '#446688';

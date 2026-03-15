@@ -1186,14 +1186,16 @@ const BuildingTool = {
     },
 
     _addBuiltInPresets() {
-        const D = 1 / 111000; // degrees per meter
+        const D_LAT = 1 / 111000; // degrees latitude per meter
+        // Edmonton is ~53.5°N; longitude degrees are shorter by cos(lat)
+        const D_LNG = D_LAT / Math.cos(53.5 * Math.PI / 180);
 
-        // Helper: rectangle centered at origin (half-widths)
+        // Helper: rectangle centered at origin (half-widths in meters)
         const rect = (wM, dM) => [
-            { dLat: -(dM/2)*D, dLng: -(wM/2)*D },
-            { dLat: -(dM/2)*D, dLng:  (wM/2)*D },
-            { dLat:  (dM/2)*D, dLng:  (wM/2)*D },
-            { dLat:  (dM/2)*D, dLng: -(wM/2)*D }
+            { dLat: -(dM/2)*D_LAT, dLng: -(wM/2)*D_LNG },
+            { dLat: -(dM/2)*D_LAT, dLng:  (wM/2)*D_LNG },
+            { dLat:  (dM/2)*D_LAT, dLng:  (wM/2)*D_LNG },
+            { dLat:  (dM/2)*D_LAT, dLng: -(wM/2)*D_LNG }
         ];
 
         // --- Edmonton Residential (RS Zone, 3-storey max) ---
@@ -1303,34 +1305,36 @@ const BuildingTool = {
         // --- Non-Rectangular Shapes ---
 
         // L-shape building (e.g., courtyard apartment)
-        const u = 3 * D;
+        const uLat = 3 * D_LAT;
+        const uLng = 3 * D_LNG;
         this.templates.push({
             name: 'L-Shape',
             relativeFootprint: [
-                { dLat: -4*u, dLng: -4*u },
-                { dLat: -4*u, dLng:  4*u },
-                { dLat:   0,  dLng:  4*u },
-                { dLat:   0,  dLng:   0  },
-                { dLat:  4*u, dLng:   0  },
-                { dLat:  4*u, dLng: -4*u }
+                { dLat: -4*uLat, dLng: -4*uLng },
+                { dLat: -4*uLat, dLng:  4*uLng },
+                { dLat:   0,     dLng:  4*uLng },
+                { dLat:   0,     dLng:   0      },
+                { dLat:  4*uLat, dLng:   0      },
+                { dLat:  4*uLat, dLng: -4*uLng }
             ],
             height: 10.5, storeys: 3, color: '#AABB99',
             builtIn: true
         });
 
         // U-shape courtyard building
-        const v = 2.5 * D;
+        const vLat = 2.5 * D_LAT;
+        const vLng = 2.5 * D_LNG;
         this.templates.push({
             name: 'U-Shape Courtyard',
             relativeFootprint: [
-                { dLat: -5*v, dLng: -5*v },
-                { dLat: -5*v, dLng:  5*v },
-                { dLat: -3*v, dLng:  5*v },
-                { dLat: -3*v, dLng:  2*v },
-                { dLat:  3*v, dLng:  2*v },
-                { dLat:  3*v, dLng:  5*v },
-                { dLat:  5*v, dLng:  5*v },
-                { dLat:  5*v, dLng: -5*v }
+                { dLat: -5*vLat, dLng: -5*vLng },
+                { dLat: -5*vLat, dLng:  5*vLng },
+                { dLat: -3*vLat, dLng:  5*vLng },
+                { dLat: -3*vLat, dLng:  2*vLng },
+                { dLat:  3*vLat, dLng:  2*vLng },
+                { dLat:  3*vLat, dLng:  5*vLng },
+                { dLat:  5*vLat, dLng:  5*vLng },
+                { dLat:  5*vLat, dLng: -5*vLng }
             ],
             height: 14, storeys: 4, color: '#99AA88',
             builtIn: true
