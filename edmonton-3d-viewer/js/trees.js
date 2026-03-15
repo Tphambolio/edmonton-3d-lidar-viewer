@@ -10,7 +10,7 @@ const Trees = {
     tileIndex: null,
     loadedTiles: new Set(),
     tilesets: [],
-    heightOffset: -6, // meters — compensates for canopy start height + terrain model gap
+    heightOffset: 0, // meters — fine-tune adjustment (auto-aligned per tile via z_base_offset)
 
     TILE_SIZE_M: 512,
 
@@ -124,9 +124,10 @@ const Trees = {
                 });
 
                 tileset.root.transform = Cesium.Matrix4.IDENTITY;
+                const zBaseOffset = tileInfo.z_base_offset || 0;
                 const center = Cesium.Cartesian3.fromDegrees(
                     tileInfo.center_lng, tileInfo.center_lat,
-                    terrain.min + this.heightOffset
+                    terrain.center - zBaseOffset + this.heightOffset
                 );
                 tileset.modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(center);
                 tileInfo._terrainMin = terrain.min;
@@ -177,10 +178,11 @@ const Trees = {
             const tileName = [...this.loadedTiles][i];
             const tileInfo = this.tileIndex.tiles[tileName];
             if (!tileInfo) return;
-            const terrainMin = tileInfo._terrainMin || 0;
+            const terrainCenter = tileInfo._terrainCenter || 0;
+            const zBaseOffset = tileInfo.z_base_offset || 0;
             const center = Cesium.Cartesian3.fromDegrees(
                 tileInfo.center_lng, tileInfo.center_lat,
-                terrainMin + offset
+                terrainCenter - zBaseOffset + offset
             );
             ts.modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(center);
         });
