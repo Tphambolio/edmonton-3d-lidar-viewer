@@ -32,6 +32,12 @@ const BuildingTool = {
     buildings: [],         // Array of custom building objects
     _nextId: 1,
 
+    // Clipboard for copy/paste
+    _clipboard: null,      // Copied building config (footprint shape + settings)
+
+    // Template system
+    templates: [],         // Saved building templates [{name, footprint, config}]
+
     // References
     _viewer: null,
     _handler: null,
@@ -39,6 +45,7 @@ const BuildingTool = {
 
     init(viewer) {
         this._viewer = viewer;
+        this._loadTemplates();
     },
 
     // ——— Freeform Drawing ———
@@ -1003,6 +1010,333 @@ const BuildingTool = {
             this._viewer.entities.remove(e);
         }
         this._pointEntities = [];
+    },
+
+    // ——— Copy / Paste ———
+
+    copyBuilding(buildingId) {
+        const building = this.buildings.find(b => b.id === buildingId);
+        if (!building) return false;
+
+        // Store relative footprint (offsets from centroid) + config
+        const centLat = building.footprint.reduce((s, p) => s + p.lat, 0) / building.footprint.length;
+        const centLng = building.footprint.reduce((s, p) => s + p.lng, 0) / building.footprint.length;
+
+        this._clipboard = {
+            relativeFootprint: building.footprint.map(p => ({
+                dLat: p.lat - centLat,
+                dLng: p.lng - centLng
+            })),
+            height: building.height,
+            storeys: building.storeys,
+            color: building.color,
+            generationConfig: building.generationConfig ? JSON.parse(JSON.stringify(building.generationConfig)) : null
+        };
+        return true;
+    },
+
+    hasClipboard() {
+        return !!this._clipboard;
+    },
+
+    getClipboard() {
+        return this._clipboard;
+    },
+
+    pasteFootprintAt(lat, lng) {
+        if (!this._clipboard) return false;
+
+        // Reconstruct footprint at the target location
+        this.cancel();
+        this._points = this._clipboard.relativeFootprint.map(rp => {
+            const pLat = lat + rp.dLat;
+            const pLng = lng + rp.dLng;
+            return {
+                lat: pLat,
+                lng: pLng,
+                cartesian: Cesium.Cartesian3.fromDegrees(pLng, pLat)
+            };
+        });
+
+        this.mode = 'configuring';
+        this._updatePreview();
+        this._updateMeasurements();
+        this._fireUpdate();
+        return true;
+    },
+
+    // ——— Template System ———
+
+    saveTemplate(name) {
+        if (this._points.length < 3 && !this._clipboard) return false;
+
+        let templateData;
+
+        if (this._points.length >= 3) {
+            // Save from current footprint
+            const centLat = this._points.reduce((s, p) => s + p.lat, 0) / this._points.length;
+            const centLng = this._points.reduce((s, p) => s + p.lng, 0) / this._points.length;
+
+            templateData = {
+                relativeFootprint: this._points.map(p => ({
+                    dLat: p.lat - centLat,
+                    dLng: p.lng - centLng
+                }))
+            };
+        } else if (this._clipboard) {
+            templateData = {
+                relativeFootprint: [...this._clipboard.relativeFootprint]
+            };
+        }
+
+        const template = {
+            name: name,
+            relativeFootprint: templateData.relativeFootprint,
+            timestamp: Date.now()
+        };
+
+        // Check for duplicate name and replace
+        const existingIdx = this.templates.findIndex(t => t.name === name);
+        if (existingIdx >= 0) {
+            this.templates[existingIdx] = template;
+        } else {
+            this.templates.push(template);
+        }
+
+        this._persistTemplates();
+        return true;
+    },
+
+    saveTemplateFromBuilding(buildingId, name) {
+        const building = this.buildings.find(b => b.id === buildingId);
+        if (!building) return false;
+
+        const centLat = building.footprint.reduce((s, p) => s + p.lat, 0) / building.footprint.length;
+        const centLng = building.footprint.reduce((s, p) => s + p.lng, 0) / building.footprint.length;
+
+        const template = {
+            name: name,
+            relativeFootprint: building.footprint.map(p => ({
+                dLat: p.lat - centLat,
+                dLng: p.lng - centLng
+            })),
+            height: building.height,
+            storeys: building.storeys,
+            color: building.color,
+            generationConfig: building.generationConfig ? JSON.parse(JSON.stringify(building.generationConfig)) : null,
+            timestamp: Date.now()
+        };
+
+        const existingIdx = this.templates.findIndex(t => t.name === name);
+        if (existingIdx >= 0) {
+            this.templates[existingIdx] = template;
+        } else {
+            this.templates.push(template);
+        }
+
+        this._persistTemplates();
+        return true;
+    },
+
+    deleteTemplate(name) {
+        const idx = this.templates.findIndex(t => t.name === name);
+        if (idx < 0) return false;
+        this.templates.splice(idx, 1);
+        this._persistTemplates();
+        return true;
+    },
+
+    applyTemplate(name) {
+        const template = this.templates.find(t => t.name === name);
+        if (!template) return false;
+
+        // Put the template shape into the clipboard so paste mode can use it
+        this._clipboard = {
+            relativeFootprint: template.relativeFootprint.map(p => ({ ...p })),
+            height: template.height || 10,
+            storeys: template.storeys || 3,
+            color: template.color || '#CCBBAA',
+            generationConfig: template.generationConfig ? JSON.parse(JSON.stringify(template.generationConfig)) : null
+        };
+        return true;
+    },
+
+    _persistTemplates() {
+        try {
+            localStorage.setItem('buildingTemplates', JSON.stringify(this.templates));
+        } catch (e) {
+            console.warn('Failed to save templates:', e);
+        }
+    },
+
+    _loadTemplates() {
+        try {
+            const stored = localStorage.getItem('buildingTemplates');
+            if (stored) {
+                this.templates = JSON.parse(stored);
+            }
+        } catch (e) {
+            console.warn('Failed to load templates:', e);
+        }
+
+        // Add built-in presets if no templates exist
+        if (this.templates.length === 0) {
+            this._addBuiltInPresets();
+        }
+    },
+
+    _addBuiltInPresets() {
+        const D = 1 / 111000; // degrees per meter
+
+        // Helper: rectangle centered at origin (half-widths)
+        const rect = (wM, dM) => [
+            { dLat: -(dM/2)*D, dLng: -(wM/2)*D },
+            { dLat: -(dM/2)*D, dLng:  (wM/2)*D },
+            { dLat:  (dM/2)*D, dLng:  (wM/2)*D },
+            { dLat:  (dM/2)*D, dLng: -(wM/2)*D }
+        ];
+
+        // --- Edmonton Residential (RS Zone, 3-storey max) ---
+
+        // Standard Edmonton bungalow on 50ft lot (≈9m × 12m footprint)
+        this.templates.push({
+            name: 'Bungalow',
+            relativeFootprint: rect(9, 12),
+            height: 4.5, storeys: 1, color: '#CCBBAA',
+            builtIn: true
+        });
+
+        // Edmonton "Skinny" infill (5.2m × 12m on 25ft lot)
+        this.templates.push({
+            name: 'Skinny Infill',
+            relativeFootprint: rect(5.2, 12),
+            height: 9, storeys: 2.5, color: '#B8A898',
+            builtIn: true
+        });
+
+        // Two-storey detached (10.7m × 12.8m, typical new-build)
+        this.templates.push({
+            name: 'Detached 2-Storey',
+            relativeFootprint: rect(10.7, 12.8),
+            height: 7, storeys: 2, color: '#C4B5A5',
+            builtIn: true
+        });
+
+        // Semi-detached / Side-by-side duplex (13.5m × 12m, min 470m² lot)
+        this.templates.push({
+            name: 'Side-by-Side Duplex',
+            relativeFootprint: rect(13.5, 12),
+            height: 7, storeys: 2, color: '#BBA99A',
+            builtIn: true
+        });
+
+        // Row house unit (6m × 13m, per-unit footprint)
+        this.templates.push({
+            name: 'Row House (1 unit)',
+            relativeFootprint: rect(6, 13),
+            height: 9, storeys: 2.5, color: '#A89888',
+            builtIn: true
+        });
+
+        // 4-unit row house block (24m × 13m)
+        this.templates.push({
+            name: 'Row House (4-unit)',
+            relativeFootprint: rect(24, 13),
+            height: 9, storeys: 2.5, color: '#A08878',
+            builtIn: true
+        });
+
+        // --- Multi-Unit & Medium Density ---
+
+        // Walk-up apartment (RS zone max: 3 storeys, 20m × 14m)
+        this.templates.push({
+            name: 'Walk-up Apt (3F)',
+            relativeFootprint: rect(20, 14),
+            height: 10.5, storeys: 3, color: '#998877',
+            builtIn: true
+        });
+
+        // Mid-rise apartment (RM zone: 4 storeys, 30m × 16m)
+        this.templates.push({
+            name: 'Mid-Rise Apt (4F)',
+            relativeFootprint: rect(30, 16),
+            height: 14, storeys: 4, color: '#8A7A6A',
+            builtIn: true
+        });
+
+        // --- Commercial & Mixed-Use ---
+
+        // Small retail / strip mall unit (15m × 20m)
+        this.templates.push({
+            name: 'Retail / Strip Mall',
+            relativeFootprint: rect(15, 20),
+            height: 5, storeys: 1, color: '#9AA8B8',
+            builtIn: true
+        });
+
+        // Office building (25m × 20m, 6-storey)
+        this.templates.push({
+            name: 'Office (6F)',
+            relativeFootprint: rect(25, 20),
+            height: 24, storeys: 6, color: '#8899AA',
+            builtIn: true
+        });
+
+        // --- Larger Typologies ---
+
+        // Office tower (30m × 25m, 12 storeys)
+        this.templates.push({
+            name: 'Tower (12F)',
+            relativeFootprint: rect(30, 25),
+            height: 42, storeys: 12, color: '#7888A0',
+            builtIn: true
+        });
+
+        // Warehouse / light industrial (30m × 60m)
+        this.templates.push({
+            name: 'Warehouse',
+            relativeFootprint: rect(30, 60),
+            height: 10, storeys: 1, color: '#8A9088',
+            builtIn: true
+        });
+
+        // --- Non-Rectangular Shapes ---
+
+        // L-shape building (e.g., courtyard apartment)
+        const u = 3 * D;
+        this.templates.push({
+            name: 'L-Shape',
+            relativeFootprint: [
+                { dLat: -4*u, dLng: -4*u },
+                { dLat: -4*u, dLng:  4*u },
+                { dLat:   0,  dLng:  4*u },
+                { dLat:   0,  dLng:   0  },
+                { dLat:  4*u, dLng:   0  },
+                { dLat:  4*u, dLng: -4*u }
+            ],
+            height: 10.5, storeys: 3, color: '#AABB99',
+            builtIn: true
+        });
+
+        // U-shape courtyard building
+        const v = 2.5 * D;
+        this.templates.push({
+            name: 'U-Shape Courtyard',
+            relativeFootprint: [
+                { dLat: -5*v, dLng: -5*v },
+                { dLat: -5*v, dLng:  5*v },
+                { dLat: -3*v, dLng:  5*v },
+                { dLat: -3*v, dLng:  2*v },
+                { dLat:  3*v, dLng:  2*v },
+                { dLat:  3*v, dLng:  5*v },
+                { dLat:  5*v, dLng:  5*v },
+                { dLat:  5*v, dLng: -5*v }
+            ],
+            height: 14, storeys: 4, color: '#99AA88',
+            builtIn: true
+        });
+
+        this._persistTemplates();
     },
 
     _fireUpdate() {
