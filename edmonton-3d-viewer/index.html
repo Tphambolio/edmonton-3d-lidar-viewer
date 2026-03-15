@@ -78,6 +78,14 @@
                     <button id="rectDrawBtn" class="btn-draw btn-rect" title="Draw rectangle: click two opposite corners">Rectangle</button>
                     <button id="drawBuildingBtn" class="btn-draw btn-draw-alt" title="Freeform polygon: click each corner">Draw</button>
                 </div>
+                <!-- Templates -->
+                <div class="template-section">
+                    <div class="template-header">
+                        <span>Templates</span>
+                        <button id="pasteBtn" class="btn-paste" disabled title="Paste copied building (Ctrl+V)">Paste</button>
+                    </div>
+                    <div class="template-list" id="templateList"></div>
+                </div>
             </div>
             <div id="buildToolDrawing" class="hidden">
                 <p class="drawing-hint" id="drawingHint">Click on the map to place corners.<br>Double-click or press Done to finish.</p>
@@ -233,6 +241,7 @@
                 <div class="footprint-tools">
                     <button id="orthogonalizeBtn" class="btn-tool" title="Snap polygon to right angles (Q)">Square</button>
                     <button id="editVerticesBtn" class="btn-tool" title="Drag vertices to reshape footprint">Edit Vertices</button>
+                    <button id="saveTemplateBtn" class="btn-tool" title="Save footprint as template">Save Template</button>
                 </div>
                 <div class="config-actions">
                     <button id="generateModelBtn" class="btn-generate" disabled>Generate 3D Model</button>

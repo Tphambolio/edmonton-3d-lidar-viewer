@@ -32,6 +32,12 @@ const BuildingTool = {
     buildings: [],         // Array of custom building objects
     _nextId: 1,
 
+    // Clipboard for copy/paste
+    _clipboard: null,      // Copied building config (footprint shape + settings)
+
+    // Template system
+    templates: [],         // Saved building templates [{name, footprint, config}]
+
     // References
     _viewer: null,
     _handler: null,
@@ -39,6 +45,7 @@ const BuildingTool = {
 
     init(viewer) {
         this._viewer = viewer;
+        this._loadTemplates();
     },
 
     // ——— Freeform Drawing ———
@@ -1003,6 +1010,271 @@ const BuildingTool = {
             this._viewer.entities.remove(e);
         }
         this._pointEntities = [];
+    },
+
+    // ——— Copy / Paste ———
+
+    copyBuilding(buildingId) {
+        const building = this.buildings.find(b => b.id === buildingId);
+        if (!building) return false;
+
+        // Store relative footprint (offsets from centroid) + config
+        const centLat = building.footprint.reduce((s, p) => s + p.lat, 0) / building.footprint.length;
+        const centLng = building.footprint.reduce((s, p) => s + p.lng, 0) / building.footprint.length;
+
+        this._clipboard = {
+            relativeFootprint: building.footprint.map(p => ({
+                dLat: p.lat - centLat,
+                dLng: p.lng - centLng
+            })),
+            height: building.height,
+            storeys: building.storeys,
+            color: building.color,
+            generationConfig: building.generationConfig ? JSON.parse(JSON.stringify(building.generationConfig)) : null
+        };
+        return true;
+    },
+
+    hasClipboard() {
+        return !!this._clipboard;
+    },
+
+    getClipboard() {
+        return this._clipboard;
+    },
+
+    pasteFootprintAt(lat, lng) {
+        if (!this._clipboard) return false;
+
+        // Reconstruct footprint at the target location
+        this.cancel();
+        this._points = this._clipboard.relativeFootprint.map(rp => {
+            const pLat = lat + rp.dLat;
+            const pLng = lng + rp.dLng;
+            return {
+                lat: pLat,
+                lng: pLng,
+                cartesian: Cesium.Cartesian3.fromDegrees(pLng, pLat)
+            };
+        });
+
+        this.mode = 'configuring';
+        this._updatePreview();
+        this._updateMeasurements();
+        this._fireUpdate();
+        return true;
+    },
+
+    // ——— Template System ———
+
+    saveTemplate(name) {
+        if (this._points.length < 3 && !this._clipboard) return false;
+
+        let templateData;
+
+        if (this._points.length >= 3) {
+            // Save from current footprint
+            const centLat = this._points.reduce((s, p) => s + p.lat, 0) / this._points.length;
+            const centLng = this._points.reduce((s, p) => s + p.lng, 0) / this._points.length;
+
+            templateData = {
+                relativeFootprint: this._points.map(p => ({
+                    dLat: p.lat - centLat,
+                    dLng: p.lng - centLng
+                }))
+            };
+        } else if (this._clipboard) {
+            templateData = {
+                relativeFootprint: [...this._clipboard.relativeFootprint]
+            };
+        }
+
+        const template = {
+            name: name,
+            relativeFootprint: templateData.relativeFootprint,
+            timestamp: Date.now()
+        };
+
+        // Check for duplicate name and replace
+        const existingIdx = this.templates.findIndex(t => t.name === name);
+        if (existingIdx >= 0) {
+            this.templates[existingIdx] = template;
+        } else {
+            this.templates.push(template);
+        }
+
+        this._persistTemplates();
+        return true;
+    },
+
+    saveTemplateFromBuilding(buildingId, name) {
+        const building = this.buildings.find(b => b.id === buildingId);
+        if (!building) return false;
+
+        const centLat = building.footprint.reduce((s, p) => s + p.lat, 0) / building.footprint.length;
+        const centLng = building.footprint.reduce((s, p) => s + p.lng, 0) / building.footprint.length;
+
+        const template = {
+            name: name,
+            relativeFootprint: building.footprint.map(p => ({
+                dLat: p.lat - centLat,
+                dLng: p.lng - centLng
+            })),
+            height: building.height,
+            storeys: building.storeys,
+            color: building.color,
+            generationConfig: building.generationConfig ? JSON.parse(JSON.stringify(building.generationConfig)) : null,
+            timestamp: Date.now()
+        };
+
+        const existingIdx = this.templates.findIndex(t => t.name === name);
+        if (existingIdx >= 0) {
+            this.templates[existingIdx] = template;
+        } else {
+            this.templates.push(template);
+        }
+
+        this._persistTemplates();
+        return true;
+    },
+
+    deleteTemplate(name) {
+        const idx = this.templates.findIndex(t => t.name === name);
+        if (idx < 0) return false;
+        this.templates.splice(idx, 1);
+        this._persistTemplates();
+        return true;
+    },
+
+    applyTemplate(name) {
+        const template = this.templates.find(t => t.name === name);
+        if (!template) return false;
+
+        // Put the template shape into the clipboard so paste mode can use it
+        this._clipboard = {
+            relativeFootprint: template.relativeFootprint.map(p => ({ ...p })),
+            height: template.height || 10,
+            storeys: template.storeys || 3,
+            color: template.color || '#CCBBAA',
+            generationConfig: template.generationConfig ? JSON.parse(JSON.stringify(template.generationConfig)) : null
+        };
+        return true;
+    },
+
+    _persistTemplates() {
+        try {
+            localStorage.setItem('buildingTemplates', JSON.stringify(this.templates));
+        } catch (e) {
+            console.warn('Failed to save templates:', e);
+        }
+    },
+
+    _loadTemplates() {
+        try {
+            const stored = localStorage.getItem('buildingTemplates');
+            if (stored) {
+                this.templates = JSON.parse(stored);
+            }
+        } catch (e) {
+            console.warn('Failed to load templates:', e);
+        }
+
+        // Add built-in presets if no templates exist
+        if (this.templates.length === 0) {
+            this._addBuiltInPresets();
+        }
+    },
+
+    _addBuiltInPresets() {
+        const DEG_PER_M = 1 / 111000;
+
+        // Small House (8m x 10m)
+        const houseW = 4 * DEG_PER_M, houseD = 5 * DEG_PER_M;
+        this.templates.push({
+            name: 'Small House',
+            relativeFootprint: [
+                { dLat: -houseD, dLng: -houseW },
+                { dLat: -houseD, dLng: houseW },
+                { dLat: houseD, dLng: houseW },
+                { dLat: houseD, dLng: -houseW }
+            ],
+            height: 7, storeys: 2, color: '#CCBBAA',
+            builtIn: true
+        });
+
+        // Duplex (12m x 10m)
+        const dupW = 6 * DEG_PER_M, dupD = 5 * DEG_PER_M;
+        this.templates.push({
+            name: 'Duplex',
+            relativeFootprint: [
+                { dLat: -dupD, dLng: -dupW },
+                { dLat: -dupD, dLng: dupW },
+                { dLat: dupD, dLng: dupW },
+                { dLat: dupD, dLng: -dupW }
+            ],
+            height: 7, storeys: 2, color: '#BBA99A',
+            builtIn: true
+        });
+
+        // 4-Plex (14m x 14m)
+        const plexW = 7 * DEG_PER_M, plexD = 7 * DEG_PER_M;
+        this.templates.push({
+            name: '4-Plex',
+            relativeFootprint: [
+                { dLat: -plexD, dLng: -plexW },
+                { dLat: -plexD, dLng: plexW },
+                { dLat: plexD, dLng: plexW },
+                { dLat: plexD, dLng: -plexW }
+            ],
+            height: 10.5, storeys: 3, color: '#AA9988',
+            builtIn: true
+        });
+
+        // Low-Rise Apartment (20m x 15m)
+        const aptW = 10 * DEG_PER_M, aptD = 7.5 * DEG_PER_M;
+        this.templates.push({
+            name: 'Low-Rise Apt',
+            relativeFootprint: [
+                { dLat: -aptD, dLng: -aptW },
+                { dLat: -aptD, dLng: aptW },
+                { dLat: aptD, dLng: aptW },
+                { dLat: aptD, dLng: -aptW }
+            ],
+            height: 14, storeys: 4, color: '#998877',
+            builtIn: true
+        });
+
+        // Office Tower (25m x 20m)
+        const offW = 12.5 * DEG_PER_M, offD = 10 * DEG_PER_M;
+        this.templates.push({
+            name: 'Office Tower',
+            relativeFootprint: [
+                { dLat: -offD, dLng: -offW },
+                { dLat: -offD, dLng: offW },
+                { dLat: offD, dLng: offW },
+                { dLat: offD, dLng: -offW }
+            ],
+            height: 42, storeys: 12, color: '#8899AA',
+            builtIn: true
+        });
+
+        // L-Shape Building
+        const u = 3 * DEG_PER_M;
+        this.templates.push({
+            name: 'L-Shape',
+            relativeFootprint: [
+                { dLat: -3*u, dLng: -3*u },
+                { dLat: -3*u, dLng: 3*u },
+                { dLat: 0, dLng: 3*u },
+                { dLat: 0, dLng: 0 },
+                { dLat: 3*u, dLng: 0 },
+                { dLat: 3*u, dLng: -3*u }
+            ],
+            height: 10.5, storeys: 3, color: '#AABB99',
+            builtIn: true
+        });
+
+        this._persistTemplates();
     },
 
     _fireUpdate() {

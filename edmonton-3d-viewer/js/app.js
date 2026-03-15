@@ -804,11 +804,31 @@ function setupBuildingToolUI() {
 
     // Keyboard shortcut: Q for orthogonalize
     document.addEventListener('keydown', (e) => {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
         if (e.key === 'q' || e.key === 'Q') {
             if (BuildingTool.mode === 'configuring' || BuildingTool.mode === 'editing_vertices') {
                 BuildingTool.orthogonalize();
             }
+        }
+        // Ctrl+C — copy selected custom building
+        if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+            if (selectedCustomBuilding) {
+                e.preventDefault();
+                BuildingTool.copyBuilding(selectedCustomBuilding.id);
+                document.getElementById('pasteBtn').disabled = false;
+                setStatus(`Copied building ${selectedCustomBuilding.id}`);
+            }
+        }
+        // Ctrl+V — enter paste placement mode
+        if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+            if (BuildingTool.hasClipboard() && BuildingTool.mode === 'idle') {
+                e.preventDefault();
+                startPasteMode();
+            }
+        }
+        // Escape — cancel paste mode
+        if (e.key === 'Escape' && _pasteHandler) {
+            cancelPasteMode();
         }
     });
 
@@ -1246,6 +1266,28 @@ function setupBuildingToolUI() {
         updateBuildingList();
     });
 
+    // Save Template button
+    const saveTemplateBtn = document.getElementById('saveTemplateBtn');
+    saveTemplateBtn.addEventListener('click', () => {
+        const name = prompt('Template name:');
+        if (!name || !name.trim()) return;
+        if (BuildingTool.saveTemplate(name.trim())) {
+            setStatus(`Saved template "${name.trim()}"`);
+            renderTemplateList();
+        }
+    });
+
+    // Paste button
+    const pasteBtn = document.getElementById('pasteBtn');
+    pasteBtn.addEventListener('click', () => {
+        if (BuildingTool.hasClipboard() && BuildingTool.mode === 'idle') {
+            startPasteMode();
+        }
+    });
+
+    // Initial template list render
+    renderTemplateList();
+
     // Listen for BuildingTool state changes
     BuildingTool.onUpdate = (mode, pointCount) => {
         const idleDiv = document.getElementById('buildToolIdle');
@@ -1319,12 +1361,190 @@ function setupBuildingToolUI() {
 
         if (mode === 'idle') {
             generateBtn.disabled = true;
+            // Refresh paste button state
+            const pasteBtn = document.getElementById('pasteBtn');
+            if (pasteBtn) pasteBtn.disabled = !BuildingTool.hasClipboard();
         }
 
         updateBuildingList();
         updateStats();
     };
 }
+
+// ——— Paste Placement Mode ———
+
+let _pasteHandler = null;
+let _pastePreview = null;
+
+function startPasteMode() {
+    if (!BuildingTool.hasClipboard() || BuildingTool.mode !== 'idle') return;
+
+    const canvas = viewer.scene.canvas;
+    canvas.style.cursor = 'crosshair';
+    setStatus('Click to paste building. Press Escape to cancel.');
+
+    _pasteHandler = new Cesium.ScreenSpaceEventHandler(canvas);
+
+    // Mouse move — show preview of pasted footprint
+    _pasteHandler.setInputAction((movement) => {
+        const ray = viewer.camera.getPickRay(movement.endPosition);
+        if (!ray) return;
+        const cartesian = viewer.scene.globe.pick(ray, viewer.scene);
+        if (!cartesian) return;
+
+        const carto = Cesium.Cartographic.fromCartesian(cartesian);
+        const lat = Cesium.Math.toDegrees(carto.latitude);
+        const lng = Cesium.Math.toDegrees(carto.longitude);
+
+        const clipboard = BuildingTool.getClipboard();
+        const positions = clipboard.relativeFootprint.map(rp =>
+            Cesium.Cartesian3.fromDegrees(lng + rp.dLng, lat + rp.dLat)
+        );
+
+        if (_pastePreview) viewer.entities.remove(_pastePreview);
+        _pastePreview = viewer.entities.add({
+            name: 'paste_preview',
+            polygon: {
+                hierarchy: positions,
+                material: Cesium.Color.fromCssColorString(clipboard.color || '#5599cc').withAlpha(0.3),
+                outline: true,
+                outlineColor: Cesium.Color.CYAN.withAlpha(0.8),
+                heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
+            }
+        });
+    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+    // Left click — place
+    _pasteHandler.setInputAction((click) => {
+        const ray = viewer.camera.getPickRay(click.position);
+        if (!ray) return;
+        const cartesian = viewer.scene.globe.pick(ray, viewer.scene);
+        if (!cartesian) return;
+
+        const carto = Cesium.Cartographic.fromCartesian(cartesian);
+        const lat = Cesium.Math.toDegrees(carto.latitude);
+        const lng = Cesium.Math.toDegrees(carto.longitude);
+
+        const clipboard = BuildingTool.getClipboard();
+
+        cleanupPasteMode();
+        BuildingTool.pasteFootprintAt(lat, lng);
+
+        // Apply clipboard config to UI
+        if (clipboard.height) {
+            document.getElementById('buildHeightSlider').value = clipboard.height;
+            document.getElementById('heightValue').textContent = clipboard.height + 'm';
+        }
+        if (clipboard.color) {
+            document.getElementById('buildColorPicker').value = clipboard.color;
+        }
+        if (clipboard.generationConfig) {
+            window._floorConfigs = { ...clipboard.generationConfig.floorConfigs };
+            if (clipboard.generationConfig.door) {
+                document.getElementById('addDoorChk').checked = true;
+                document.getElementById('doorWidthSlider').value = clipboard.generationConfig.door.width;
+                document.getElementById('doorHeightSlider').value = clipboard.generationConfig.door.height;
+            }
+            if (clipboard.generationConfig.colors) {
+                document.getElementById('glassColorPicker').value = clipboard.generationConfig.colors.glass || '#446688';
+                document.getElementById('frameColorPicker').value = clipboard.generationConfig.colors.frame || '#888888';
+            }
+            if (clipboard.generationConfig.roofType) {
+                window._roofType = clipboard.generationConfig.roofType;
+                document.querySelectorAll('.roof-btn').forEach(b => {
+                    b.classList.toggle('active', b.dataset.roof === clipboard.generationConfig.roofType);
+                });
+            }
+        }
+
+        setStatus('Footprint pasted — configure and generate');
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+    // Right click — cancel
+    _pasteHandler.setInputAction(() => {
+        cancelPasteMode();
+    }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+}
+
+function cleanupPasteMode() {
+    if (_pasteHandler) {
+        _pasteHandler.destroy();
+        _pasteHandler = null;
+    }
+    if (_pastePreview) {
+        viewer.entities.remove(_pastePreview);
+        _pastePreview = null;
+    }
+    viewer.scene.canvas.style.cursor = '';
+}
+
+function cancelPasteMode() {
+    cleanupPasteMode();
+    setStatus('');
+}
+
+// ——— Template List Rendering ———
+
+function renderTemplateList() {
+    const list = document.getElementById('templateList');
+    if (!list) return;
+
+    const templates = BuildingTool.templates;
+    if (templates.length === 0) {
+        list.innerHTML = '<span style="font-size:10px;color:#666;">No templates saved</span>';
+        return;
+    }
+
+    list.innerHTML = templates.map(t => `
+        <span class="template-chip${t.builtIn ? ' builtin' : ''}" data-template="${t.name}" title="${t.name}${t.height ? ' (' + t.height + 'm, ' + (t.storeys || '?') + 'F)' : ''}">
+            <span class="chip-color" style="background:${t.color || '#888'}"></span>
+            <span>${t.name}</span>
+            ${!t.builtIn ? '<span class="chip-delete" data-del="' + t.name + '">&times;</span>' : ''}
+        </span>
+    `).join('');
+
+    // Click template chip → enter paste mode with that template
+    list.querySelectorAll('.template-chip').forEach(chip => {
+        chip.addEventListener('click', (e) => {
+            // Ignore if clicking delete button
+            if (e.target.classList.contains('chip-delete')) return;
+
+            const name = chip.dataset.template;
+            if (BuildingTool.applyTemplate(name)) {
+                document.getElementById('pasteBtn').disabled = false;
+
+                const template = BuildingTool.templates.find(t => t.name === name);
+                // Apply template config to UI sliders
+                if (template && template.height) {
+                    document.getElementById('buildHeightSlider').value = template.height;
+                    document.getElementById('heightValue').textContent = template.height + 'm';
+                }
+                if (template && template.color) {
+                    document.getElementById('buildColorPicker').value = template.color;
+                }
+
+                if (BuildingTool.mode === 'idle') {
+                    startPasteMode();
+                }
+            }
+        });
+    });
+
+    // Delete template
+    list.querySelectorAll('.chip-delete').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const name = btn.dataset.del;
+            if (BuildingTool.deleteTemplate(name)) {
+                renderTemplateList();
+                setStatus(`Deleted template "${name}"`);
+            }
+        });
+    });
+}
+
+// Make renderTemplateList available globally for when templates change
+window.renderTemplateList = renderTemplateList;
 
 function setupLotUI() {
     const checkbox = document.getElementById('showLotsCheckbox');
@@ -1415,7 +1635,7 @@ function selectCustomBuilding(entity) {
     if (!building) return;
     selectedCustomBuilding = building;
 
-    // Show properties in info box with edit + delete buttons
+    // Show properties in info box with edit + copy + delete buttons
     const has3D = !!building.modelEntity;
     document.getElementById('infoContent').innerHTML = `
         <table>
@@ -1427,9 +1647,11 @@ function selectCustomBuilding(entity) {
             <tr><td>Area</td><td>${building.area} m&sup2;</td></tr>
             <tr><td>Model</td><td>${has3D ? '3D generated' : 'Flat extrusion'}</td></tr>
         </table>
-        <div style="display:flex;gap:6px;margin-top:8px;">
-            <button onclick="editSelectedCustomBuilding()" style="flex:1;padding:5px 12px;border:none;border-radius:4px;background:#2a9d8f;color:white;cursor:pointer;font-size:12px;">Edit</button>
-            <button onclick="deleteSelectedCustomBuilding()" style="flex:1;padding:5px 12px;border:none;border-radius:4px;background:#c0392b;color:white;cursor:pointer;font-size:12px;">Delete</button>
+        <div style="display:flex;gap:4px;margin-top:8px;">
+            <button onclick="editSelectedCustomBuilding()" style="flex:1;padding:5px 8px;border:none;border-radius:4px;background:#2a9d8f;color:white;cursor:pointer;font-size:11px;">Edit</button>
+            <button onclick="copySelectedCustomBuilding()" class="btn-copy-building" style="flex:1;padding:5px 8px;font-size:11px;">Copy</button>
+            <button onclick="saveSelectedAsTemplate()" style="flex:1;padding:5px 8px;border:none;border-radius:4px;background:#8B6914;color:white;cursor:pointer;font-size:11px;">Template</button>
+            <button onclick="deleteSelectedCustomBuilding()" style="flex:1;padding:5px 8px;border:none;border-radius:4px;background:#c0392b;color:white;cursor:pointer;font-size:11px;">Delete</button>
         </div>`;
     document.getElementById('infoBox').classList.remove('hidden');
 
@@ -1610,6 +1832,23 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     nudgeBuilding(selectedCustomBuilding, dLat, dLng);
 });
+
+function copySelectedCustomBuilding() {
+    if (!selectedCustomBuilding) return;
+    BuildingTool.copyBuilding(selectedCustomBuilding.id);
+    document.getElementById('pasteBtn').disabled = false;
+    setStatus(`Copied ${selectedCustomBuilding.id} — click Paste or Ctrl+V to place`);
+}
+
+function saveSelectedAsTemplate() {
+    if (!selectedCustomBuilding) return;
+    const name = prompt('Template name:');
+    if (!name || !name.trim()) return;
+    if (BuildingTool.saveTemplateFromBuilding(selectedCustomBuilding.id, name.trim())) {
+        setStatus(`Saved "${name.trim()}" as template`);
+        renderTemplateList();
+    }
+}
 
 function deleteSelectedCustomBuilding() {
     if (!selectedCustomBuilding) return;
