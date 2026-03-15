@@ -172,39 +172,62 @@ const LotLoader = {
      */
     _approximateFromFootprints() {
         const buildings = window.Buildings?.entities || [];
+        console.log(`Approximating lots from ${buildings.length} buildings`);
         if (buildings.length === 0) return 0;
 
         this._lots = [];
         this.clearEntities();
 
         for (let i = 0; i < buildings.length; i++) {
-            const entity = buildings[i];
-            if (!entity?.polygon) continue;
+            try {
+                const entity = buildings[i];
+                if (!entity?.polygon) continue;
 
-            const hierarchy = entity.polygon.hierarchy?.getValue();
-            if (!hierarchy) continue;
-            const positions = hierarchy.positions || hierarchy;
-            if (!positions || positions.length < 3) continue;
+                // Extract positions from hierarchy — handle both PolygonHierarchy and raw array
+                let positions;
+                const hierProp = entity.polygon.hierarchy;
+                if (hierProp) {
+                    const val = typeof hierProp.getValue === 'function' ? hierProp.getValue(Cesium.JulianDate.now()) : hierProp;
+                    if (val) {
+                        positions = val.positions || val;
+                        // If it's a PolygonHierarchy, positions is the array
+                        if (positions instanceof Cesium.PolygonHierarchy) {
+                            positions = positions.positions;
+                        }
+                    }
+                }
 
-            const coords = [];
-            for (const pos of positions) {
-                const carto = Cesium.Cartographic.fromCartesian(pos);
-                coords.push({
-                    lng: Cesium.Math.toDegrees(carto.longitude),
-                    lat: Cesium.Math.toDegrees(carto.latitude)
+                if (!positions || positions.length < 3) {
+                    if (i === 0) console.log('First building: no valid positions', typeof positions, positions);
+                    continue;
+                }
+
+                const coords = [];
+                for (const pos of positions) {
+                    const carto = Cesium.Cartographic.fromCartesian(pos);
+                    coords.push({
+                        lng: Cesium.Math.toDegrees(carto.longitude),
+                        lat: Cesium.Math.toDegrees(carto.latitude)
+                    });
+                }
+
+                const lotPolygon = this._computeLotFromFootprint(coords);
+                if (!lotPolygon || lotPolygon.length < 4) {
+                    if (i === 0) console.log('First building: lot computation failed', coords.length, 'coords');
+                    continue;
+                }
+
+                this._lots.push({
+                    id: i,
+                    polygon: lotPolygon,
+                    buildingEntity: entity
                 });
+            } catch (e) {
+                if (i === 0) console.error('Error processing building for lot:', e);
             }
-
-            const lotPolygon = this._computeLotFromFootprint(coords);
-            if (!lotPolygon || lotPolygon.length < 4) continue;
-
-            this._lots.push({
-                id: i,
-                polygon: lotPolygon,
-                buildingEntity: entity
-            });
         }
 
+        console.log(`Generated ${this._lots.length} approximate lots`);
         this._renderLots();
         return this._lots.length;
     },
