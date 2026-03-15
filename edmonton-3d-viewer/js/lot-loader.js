@@ -171,7 +171,7 @@ const LotLoader = {
      * Fallback: generate approximate lot boundaries from building footprints.
      */
     _approximateFromFootprints() {
-        const buildings = window.Buildings?.entities || [];
+        const buildings = Buildings?.entities || [];
         console.log(`Approximating lots from ${buildings.length} buildings`);
         if (buildings.length === 0) return 0;
 
@@ -358,7 +358,7 @@ const LotLoader = {
     _renderLots() {
         this.clearEntities();
         const viewer = this._viewer;
-        const groundH = (window.Buildings?._terrainHeight || 0) + 0.2;
+        const groundH = (Buildings?._terrainHeight || 0) + 0.2;
 
         for (const lot of this._lots) {
             const positions = [];
