@@ -75,11 +75,12 @@
                 </div>
                 <div class="idle-buttons">
                     <button id="placeBuildingBtn" class="btn-draw">Place on Map</button>
-                    <button id="drawBuildingBtn" class="btn-draw btn-draw-alt">Draw Custom</button>
+                    <button id="rectDrawBtn" class="btn-draw btn-rect" title="Draw rectangle: click two opposite corners">Rectangle</button>
+                    <button id="drawBuildingBtn" class="btn-draw btn-draw-alt" title="Freeform polygon: click each corner">Draw</button>
                 </div>
             </div>
             <div id="buildToolDrawing" class="hidden">
-                <p class="drawing-hint">Click on the map to place corners.<br>Double-click or press Done to finish.</p>
+                <p class="drawing-hint" id="drawingHint">Click on the map to place corners.<br>Double-click or press Done to finish.</p>
                 <div class="draw-controls">
                     <span id="pointCount">Points: 0</span>
                     <button id="undoPointBtn" disabled>Undo</button>
@@ -229,6 +230,10 @@
                     </div>
                 </div>
 
+                <div class="footprint-tools">
+                    <button id="orthogonalizeBtn" class="btn-tool" title="Snap polygon to right angles (Q)">Square</button>
+                    <button id="editVerticesBtn" class="btn-tool" title="Drag vertices to reshape footprint">Edit Vertices</button>
+                </div>
                 <div class="config-actions">
                     <button id="generateModelBtn" class="btn-generate" disabled>Generate 3D Model</button>
                     <button id="createBuildingBtn" class="btn-create">Quick (flat)</button>
