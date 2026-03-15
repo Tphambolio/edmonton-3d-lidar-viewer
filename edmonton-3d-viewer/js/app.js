@@ -75,10 +75,12 @@ async function init() {
 
     // Initialize custom building tool
     BuildingTool.init(viewer);
+    LotLoader.init(viewer);
 
     // Wire up UI
     setupUI();
     setupBuildingToolUI();
+    setupLotUI();
     updateStats();
 }
 
@@ -179,17 +181,33 @@ function setupUI() {
         }
     });
 
-    // Apply pre-built model
+    // Apply pre-built model — works on SODA buildings or custom footprints
     applyModelBtn.addEventListener('click', async () => {
         const selectedId = modelSelect.value;
-        if (!selectedId || !Buildings.selectedEntity) return;
         const model = Buildings.MODEL_CATALOG.find(m => m.id === selectedId);
-        if (!model) return;
-        setStatus(`Loading ${model.name}...`);
+        if (!selectedId || !model) return;
+
         applyModelBtn.disabled = true;
+        setStatus(`Loading ${model.name}...`);
+
         try {
-            await Buildings.replaceWithModel(viewer, Buildings.selectedEntity, model.url, model.scale);
-            setStatus(`Replaced building with ${model.name}`);
+            if (Buildings.selectedEntity) {
+                // Replace existing SODA building
+                await Buildings.replaceWithModel(viewer, Buildings.selectedEntity, model.url, model.scale);
+                setStatus(`Replaced building with ${model.name}`);
+            } else if (BuildingTool._points.length >= 3 && BuildingTool.mode === 'configuring') {
+                // Create a custom building from footprint, then apply model
+                const height = parseFloat(document.getElementById('buildHeightSlider').value) || 10;
+                const color = document.getElementById('buildColorPicker').value;
+                const building = await BuildingTool.createBuilding({ height, color });
+                if (building) {
+                    await Buildings.replaceWithModel(viewer, building.entity, model.url, model.scale);
+                    building.entity.show = false;
+                    setStatus(`Placed ${model.name} on custom footprint`);
+                }
+            } else {
+                setStatus('Draw a footprint or select a building first');
+            }
             rotateModelBtn.disabled = false;
         } catch (e) {
             setStatus(`Failed to load model: ${e.message}`);
@@ -197,13 +215,24 @@ function setupUI() {
         }
         applyModelBtn.disabled = false;
         updateStats();
+        updateBuildingList();
     });
 
-    // Model upload (file input)
+    // Model upload (file input) — works on SODA or custom footprint
     modelUpload.addEventListener('change', async (e) => {
         const file = e.target.files[0];
-        if (!file || !Buildings.selectedEntity) return;
-        await handleModelFile(file);
+        if (!file) return;
+        if (Buildings.selectedEntity) {
+            await handleModelFile(file);
+        } else if (BuildingTool._points.length >= 3 && BuildingTool.mode === 'configuring') {
+            const height = parseFloat(document.getElementById('buildHeightSlider').value) || 10;
+            const color = document.getElementById('buildColorPicker').value;
+            const building = await BuildingTool.createBuilding({ height, color });
+            if (building) {
+                Buildings.select(building.entity);
+                await handleModelFile(file);
+            }
+        }
     });
 
     // Model upload (drag & drop)
@@ -340,16 +369,20 @@ async function loadScene(lat, lng, radiusM) {
         setStatus(`Loaded ${bldgCount} buildings, ${treeCount} tree tiles`);
     }
 
+    // Load lots if enabled
+    if (document.getElementById('showLotsCheckbox')?.checked) {
+        const lotCount = await LotLoader.loadAround(lat, lng, radiusM);
+        const lotStatus = document.getElementById('lotStatus');
+        if (lotStatus) lotStatus.textContent = lotCount > 0 ? `${lotCount} lots` : '';
+    }
+
     updateStats();
 }
 
 function selectBuilding(entity) {
     Buildings.select(entity);
-    const uploadInput = document.getElementById('modelUpload');
     const selectedDiv = document.getElementById('selectedBuilding');
     const infoBox = document.getElementById('infoBox');
-    const modelSelect = document.getElementById('modelSelect');
-    const applyModelBtn = document.getElementById('applyModelBtn');
     const rotateModelBtn = document.getElementById('rotateModelBtn');
 
     if (entity) {
@@ -359,12 +392,13 @@ function selectBuilding(entity) {
         const height = props?.height?.getValue() || '?';
         const area = props?.area_m2?.getValue() || 0;
 
-        selectedDiv.textContent = `Selected: #${id} (${type}, ${height}m)`;
-        uploadInput.disabled = false;
-        modelSelect.disabled = false;
-        applyModelBtn.disabled = false;
+        // Show selected building bar in the building tool panel
+        selectedDiv.classList.remove('hidden');
+        selectedDiv.innerHTML = `#${id} &middot; ${type} &middot; ${height}m &middot; ${area.toFixed ? area.toFixed(0) : area}m&sup2; <span class="demolish-link" onclick="demolishBuilding(Buildings.selectedEntity)">Demolish</span>`;
+
         rotateModelBtn.disabled = !Buildings.customModels[id];
 
+        // Show info box
         document.getElementById('infoContent').innerHTML = `
             <table>
                 <tr><td>ID</td><td>${id}</td></tr>
@@ -374,13 +408,44 @@ function selectBuilding(entity) {
             </table>
             <button onclick="demolishBuilding(Buildings.selectedEntity)" style="margin-top:8px;padding:6px 12px;border:none;border-radius:4px;background:#c0392b;color:white;cursor:pointer;font-size:12px;width:100%;font-weight:600;">Demolish</button>`;
         infoBox.classList.remove('hidden');
+
+        // Extract footprint from the SODA building polygon and populate building tool
+        try {
+            const hierarchy = entity.polygon.hierarchy.getValue();
+            if (hierarchy && hierarchy.positions) {
+                const points = [];
+                for (const pos of hierarchy.positions) {
+                    const carto = Cesium.Cartographic.fromCartesian(pos);
+                    points.push({
+                        lat: Cesium.Math.toDegrees(carto.latitude),
+                        lng: Cesium.Math.toDegrees(carto.longitude),
+                        cartesian: pos
+                    });
+                }
+                if (points.length >= 3) {
+                    BuildingTool.cancel();
+                    BuildingTool._points = points;
+                    BuildingTool.mode = 'configuring';
+
+                    // Set height to match existing building
+                    const numHeight = parseFloat(height) || 10;
+                    const slider = document.getElementById('buildHeightSlider');
+                    if (slider) {
+                        slider.value = numHeight;
+                        document.getElementById('heightValue').textContent = numHeight + 'm';
+                    }
+
+                    BuildingTool._fireUpdate();
+                }
+            }
+        } catch (e) {
+            console.warn('Could not extract building footprint:', e);
+        }
     } else {
-        selectedDiv.textContent = 'No building selected';
-        uploadInput.disabled = true;
-        modelSelect.disabled = true;
-        applyModelBtn.disabled = true;
+        selectedDiv.classList.add('hidden');
+        selectedDiv.innerHTML = '';
         rotateModelBtn.disabled = true;
-        modelSelect.value = '';
+        document.getElementById('modelSelect').value = '';
         infoBox.classList.add('hidden');
     }
 }
@@ -541,6 +606,145 @@ function updateDemolishedList() {
     itemsDiv.innerHTML += `<button class="restore-all-btn" onclick="restoreAllBuildings()">Restore All</button>`;
 }
 
+/**
+ * Placement mode: user clicks the map to place a rectangular building
+ * with the given width and depth (in meters).
+ */
+let _placementHandler = null;
+let _placementPreview = null;
+let _placementMoveHandler = null;
+
+function startPlacementMode(widthM, depthM) {
+    if (BuildingTool.mode !== 'idle') return;
+
+    const canvas = viewer.scene.canvas;
+    canvas.style.cursor = 'crosshair';
+    setStatus(`Click on the map to place ${widthM}m × ${depthM}m building`);
+
+    // Show idle UI as "placing" state
+    document.getElementById('buildToolIdle').querySelector('.idle-buttons').innerHTML = `
+        <button id="cancelPlaceBtn" class="btn-draw btn-cancel" style="flex:1">Cancel Placement</button>
+    `;
+    document.getElementById('cancelPlaceBtn').addEventListener('click', () => cancelPlacementMode());
+
+    // Convert meters to degrees (approximate)
+    const DEG_PER_M = 1 / 111000;
+    const halfW = (widthM / 2) * DEG_PER_M;
+    const halfD = (depthM / 2) * DEG_PER_M;
+
+    // Mouse move — show preview rectangle
+    _placementHandler = new Cesium.ScreenSpaceEventHandler(canvas);
+
+    _placementHandler.setInputAction((movement) => {
+        const ray = viewer.camera.getPickRay(movement.endPosition);
+        if (!ray) return;
+        const cartesian = viewer.scene.globe.pick(ray, viewer.scene);
+        if (!cartesian) return;
+
+        const carto = Cesium.Cartographic.fromCartesian(cartesian);
+        const lat = Cesium.Math.toDegrees(carto.latitude);
+        const lng = Cesium.Math.toDegrees(carto.longitude);
+        const cosLat = Math.cos(carto.latitude);
+
+        const halfWLng = halfW / cosLat;
+
+        // Update or create preview polygon
+        const corners = Cesium.Cartesian3.fromDegreesArray([
+            lng - halfWLng, lat - halfD,
+            lng + halfWLng, lat - halfD,
+            lng + halfWLng, lat + halfD,
+            lng - halfWLng, lat + halfD
+        ]);
+
+        if (_placementPreview) {
+            viewer.entities.remove(_placementPreview);
+        }
+        _placementPreview = viewer.entities.add({
+            name: 'placement_preview',
+            polygon: {
+                hierarchy: corners,
+                material: Cesium.Color.CYAN.withAlpha(0.2),
+                outline: true,
+                outlineColor: Cesium.Color.CYAN.withAlpha(0.8),
+                heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
+            }
+        });
+    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+    // Left click — place the building
+    _placementHandler.setInputAction((click) => {
+        const ray = viewer.camera.getPickRay(click.position);
+        if (!ray) return;
+        const cartesian = viewer.scene.globe.pick(ray, viewer.scene);
+        if (!cartesian) return;
+
+        const carto = Cesium.Cartographic.fromCartesian(cartesian);
+        const lat = Cesium.Math.toDegrees(carto.latitude);
+        const lng = Cesium.Math.toDegrees(carto.longitude);
+        const cosLat = Math.cos(carto.latitude);
+        const halfWLng = halfW / cosLat;
+
+        // Create footprint points for BuildingTool
+        const footprint = [
+            { lat: lat - halfD, lng: lng - halfWLng },
+            { lat: lat - halfD, lng: lng + halfWLng },
+            { lat: lat + halfD, lng: lng + halfWLng },
+            { lat: lat + halfD, lng: lng - halfWLng }
+        ];
+
+        // Inject footprint into BuildingTool and go to config mode
+        BuildingTool._points = footprint.map(p => ({
+            lat: p.lat,
+            lng: p.lng,
+            cartesian: Cesium.Cartesian3.fromDegrees(p.lng, p.lat)
+        }));
+        BuildingTool.mode = 'configuring';
+
+        // Clean up placement mode
+        cleanupPlacement();
+
+        // Fire update to show config panel
+        BuildingTool._fireUpdate();
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+}
+
+function cleanupPlacement() {
+    if (_placementHandler) {
+        _placementHandler.destroy();
+        _placementHandler = null;
+    }
+    if (_placementPreview) {
+        viewer.entities.remove(_placementPreview);
+        _placementPreview = null;
+    }
+    viewer.scene.canvas.style.cursor = '';
+    restorePlacementUI();
+}
+
+function cancelPlacementMode() {
+    cleanupPlacement();
+    setStatus('');
+}
+
+function restorePlacementUI() {
+    const idleBtns = document.getElementById('buildToolIdle').querySelector('.idle-buttons');
+    if (idleBtns) {
+        idleBtns.innerHTML = `
+            <button id="placeBuildingBtn" class="btn-draw">Place on Map</button>
+            <button id="drawBuildingBtn" class="btn-draw btn-draw-alt">Draw Custom</button>
+        `;
+        // Re-attach event listeners
+        document.getElementById('placeBuildingBtn').addEventListener('click', () => {
+            const w = parseFloat(document.getElementById('inputWidth').value) || 12;
+            const d = parseFloat(document.getElementById('inputDepth').value) || 10;
+            startPlacementMode(w, d);
+        });
+        document.getElementById('drawBuildingBtn').addEventListener('click', () => {
+            BuildingTool.activate();
+        });
+    }
+}
+
 function setupBuildingToolUI() {
     const drawBtn = document.getElementById('drawBuildingBtn');
     const cancelBtn = document.getElementById('cancelDrawBtn');
@@ -552,7 +756,18 @@ function setupBuildingToolUI() {
     const heightValue = document.getElementById('heightValue');
     const colorPicker = document.getElementById('buildColorPicker');
 
-    // Draw button — activate drawing mode
+    // Place by dimensions — click map to place a rectangle
+    const placeBtn = document.getElementById('placeBuildingBtn');
+    const inputWidth = document.getElementById('inputWidth');
+    const inputDepth = document.getElementById('inputDepth');
+
+    placeBtn.addEventListener('click', () => {
+        const w = parseFloat(inputWidth.value) || 12;
+        const d = parseFloat(inputDepth.value) || 10;
+        startPlacementMode(w, d);
+    });
+
+    // Draw button — activate freeform drawing mode
     drawBtn.addEventListener('click', () => {
         BuildingTool.activate();
     });
@@ -946,7 +1161,9 @@ function setupBuildingToolUI() {
             const terrainH = await Buildings.getTerrainHeight(viewer, centLat, centLng);
 
             const position = Cesium.Cartesian3.fromDegrees(centLng, centLat, terrainH);
-            const hpr = new Cesium.HeadingPitchRoll(0, 0, 0);
+            // CesiumJS Entity API maps model +X to North with heading=0.
+            // Our model is built with +X=East, so rotate 90° CW to align correctly.
+            const hpr = new Cesium.HeadingPitchRoll(Cesium.Math.PI_OVER_TWO, 0, 0);
             const orientation = Cesium.Transforms.headingPitchRollQuaternion(position, hpr);
 
             const modelEntity = viewer.entities.add({
@@ -1038,6 +1255,72 @@ function setupBuildingToolUI() {
         updateBuildingList();
         updateStats();
     };
+}
+
+function setupLotUI() {
+    const checkbox = document.getElementById('showLotsCheckbox');
+    const lotStatus = document.getElementById('lotStatus');
+
+    checkbox.addEventListener('change', async () => {
+        if (checkbox.checked) {
+            // Get current camera center
+            const carto = viewer.camera.positionCartographic;
+            const lat = Cesium.Math.toDegrees(carto.latitude);
+            const lng = Cesium.Math.toDegrees(carto.longitude);
+            const radius = parseInt(document.getElementById('radiusSlider').value) || 200;
+            lotStatus.textContent = 'Loading...';
+            const count = await LotLoader.loadAround(lat, lng, radius);
+            lotStatus.textContent = count > 0 ? `${count} lots` : 'No lots found';
+        } else {
+            LotLoader.clear();
+            lotStatus.textContent = '';
+        }
+    });
+
+    // Handle lot clicks — populate building tool footprint
+    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+
+    handler.setInputAction((click) => {
+        const picked = viewer.scene.pick(click.position);
+        if (!picked?.id) return;
+
+        if (LotLoader.isLotEntity(picked.id)) {
+            const polygon = LotLoader.getLotPolygon(picked.id);
+            if (!polygon || polygon.length < 3) return;
+
+            // Populate building tool with this lot's polygon
+            BuildingTool.cancel(); // reset any current drawing
+            BuildingTool._points = polygon.map(p => ({
+                lat: p.lat,
+                lng: p.lng,
+                cartesian: Cesium.Cartesian3.fromDegrees(p.lng, p.lat)
+            }));
+            BuildingTool.mode = 'configuring';
+            BuildingTool._fireUpdate();
+
+            // Flash highlight on the lot
+            LotLoader.highlightLot(picked.id);
+            setTimeout(() => LotLoader.unhighlightLot(), 1500);
+
+            setStatus('Lot selected — configure your building');
+        }
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+    // Hover highlight for lots
+    handler.setInputAction((movement) => {
+        if (!checkbox.checked) return;
+        const picked = viewer.scene.pick(movement.endPosition);
+        if (picked?.id && LotLoader.isLotEntity(picked.id)) {
+            LotLoader.highlightLot(picked.id);
+            viewer.scene.canvas.style.cursor = 'pointer';
+        } else {
+            LotLoader.unhighlightLot();
+            // Only reset cursor if not in drawing mode
+            if (BuildingTool.mode !== 'drawing') {
+                viewer.scene.canvas.style.cursor = '';
+            }
+        }
+    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 }
 
 function selectCustomBuilding(entity) {
@@ -1198,7 +1481,66 @@ function editSelectedCustomBuilding() {
 
     // Mark that we're in edit mode
     window._editingBuildingId = building.id;
+
+    setStatus('Editing building — use Arrow keys to nudge position');
 }
+
+/**
+ * Nudge a custom building's position by a lat/lng delta.
+ * Updates footprint, flat extrusion entity, and 3D model entity.
+ */
+async function nudgeBuilding(building, dLat, dLng) {
+    // Update footprint coordinates
+    for (const p of building.footprint) {
+        p.lat += dLat;
+        p.lng += dLng;
+    }
+
+    // Rebuild flat extrusion positions
+    const positions = [];
+    for (const p of building.footprint) {
+        positions.push(p.lng, p.lat);
+    }
+    building.entity.polygon.hierarchy = Cesium.Cartesian3.fromDegreesArray(positions);
+
+    // Update terrain height at new centroid
+    const centLat = building.footprint.reduce((s, p) => s + p.lat, 0) / building.footprint.length;
+    const centLng = building.footprint.reduce((s, p) => s + p.lng, 0) / building.footprint.length;
+    const terrainH = await Buildings.getTerrainHeight(viewer, centLat, centLng);
+    building.terrainH = terrainH;
+    building.entity.polygon.height = terrainH + 0.5;
+    building.entity.polygon.extrudedHeight = terrainH + building.height;
+
+    // Move the 3D model entity if present
+    if (building.modelEntity) {
+        const newPos = Cesium.Cartesian3.fromDegrees(centLng, centLat, terrainH);
+        building.modelEntity.position = newPos;
+        const hpr = new Cesium.HeadingPitchRoll(Cesium.Math.PI_OVER_TWO, 0, 0);
+        building.modelEntity.orientation = Cesium.Transforms.headingPitchRollQuaternion(newPos, hpr);
+    }
+}
+
+// Arrow key handler for nudging buildings in edit mode
+document.addEventListener('keydown', (e) => {
+    if (!window._editingBuildingId || !selectedCustomBuilding) return;
+
+    // Don't intercept if user is typing in an input
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+
+    const step = e.shiftKey ? 0.00005 : 0.00001; // ~5.5m or ~1.1m
+    let dLat = 0, dLng = 0;
+
+    switch (e.key) {
+        case 'ArrowUp':    dLat = step;  break;
+        case 'ArrowDown':  dLat = -step; break;
+        case 'ArrowLeft':  dLng = -step; break;
+        case 'ArrowRight': dLng = step;  break;
+        default: return;
+    }
+
+    e.preventDefault();
+    nudgeBuilding(selectedCustomBuilding, dLat, dLng);
+});
 
 function deleteSelectedCustomBuilding() {
     if (!selectedCustomBuilding) return;
