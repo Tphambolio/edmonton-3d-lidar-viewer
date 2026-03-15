@@ -1186,91 +1186,153 @@ const BuildingTool = {
     },
 
     _addBuiltInPresets() {
-        const DEG_PER_M = 1 / 111000;
+        const D = 1 / 111000; // degrees per meter
 
-        // Small House (8m x 10m)
-        const houseW = 4 * DEG_PER_M, houseD = 5 * DEG_PER_M;
+        // Helper: rectangle centered at origin (half-widths)
+        const rect = (wM, dM) => [
+            { dLat: -(dM/2)*D, dLng: -(wM/2)*D },
+            { dLat: -(dM/2)*D, dLng:  (wM/2)*D },
+            { dLat:  (dM/2)*D, dLng:  (wM/2)*D },
+            { dLat:  (dM/2)*D, dLng: -(wM/2)*D }
+        ];
+
+        // --- Edmonton Residential (RS Zone, 3-storey max) ---
+
+        // Standard Edmonton bungalow on 50ft lot (≈9m × 12m footprint)
         this.templates.push({
-            name: 'Small House',
-            relativeFootprint: [
-                { dLat: -houseD, dLng: -houseW },
-                { dLat: -houseD, dLng: houseW },
-                { dLat: houseD, dLng: houseW },
-                { dLat: houseD, dLng: -houseW }
-            ],
-            height: 7, storeys: 2, color: '#CCBBAA',
+            name: 'Bungalow',
+            relativeFootprint: rect(9, 12),
+            height: 4.5, storeys: 1, color: '#CCBBAA',
             builtIn: true
         });
 
-        // Duplex (12m x 10m)
-        const dupW = 6 * DEG_PER_M, dupD = 5 * DEG_PER_M;
+        // Edmonton "Skinny" infill (5.2m × 12m on 25ft lot)
         this.templates.push({
-            name: 'Duplex',
-            relativeFootprint: [
-                { dLat: -dupD, dLng: -dupW },
-                { dLat: -dupD, dLng: dupW },
-                { dLat: dupD, dLng: dupW },
-                { dLat: dupD, dLng: -dupW }
-            ],
+            name: 'Skinny Infill',
+            relativeFootprint: rect(5.2, 12),
+            height: 9, storeys: 2.5, color: '#B8A898',
+            builtIn: true
+        });
+
+        // Two-storey detached (10.7m × 12.8m, typical new-build)
+        this.templates.push({
+            name: 'Detached 2-Storey',
+            relativeFootprint: rect(10.7, 12.8),
+            height: 7, storeys: 2, color: '#C4B5A5',
+            builtIn: true
+        });
+
+        // Semi-detached / Side-by-side duplex (13.5m × 12m, min 470m² lot)
+        this.templates.push({
+            name: 'Side-by-Side Duplex',
+            relativeFootprint: rect(13.5, 12),
             height: 7, storeys: 2, color: '#BBA99A',
             builtIn: true
         });
 
-        // 4-Plex (14m x 14m)
-        const plexW = 7 * DEG_PER_M, plexD = 7 * DEG_PER_M;
+        // Row house unit (6m × 13m, per-unit footprint)
         this.templates.push({
-            name: '4-Plex',
-            relativeFootprint: [
-                { dLat: -plexD, dLng: -plexW },
-                { dLat: -plexD, dLng: plexW },
-                { dLat: plexD, dLng: plexW },
-                { dLat: plexD, dLng: -plexW }
-            ],
-            height: 10.5, storeys: 3, color: '#AA9988',
+            name: 'Row House (1 unit)',
+            relativeFootprint: rect(6, 13),
+            height: 9, storeys: 2.5, color: '#A89888',
             builtIn: true
         });
 
-        // Low-Rise Apartment (20m x 15m)
-        const aptW = 10 * DEG_PER_M, aptD = 7.5 * DEG_PER_M;
+        // 4-unit row house block (24m × 13m)
         this.templates.push({
-            name: 'Low-Rise Apt',
-            relativeFootprint: [
-                { dLat: -aptD, dLng: -aptW },
-                { dLat: -aptD, dLng: aptW },
-                { dLat: aptD, dLng: aptW },
-                { dLat: aptD, dLng: -aptW }
-            ],
-            height: 14, storeys: 4, color: '#998877',
+            name: 'Row House (4-unit)',
+            relativeFootprint: rect(24, 13),
+            height: 9, storeys: 2.5, color: '#A08878',
             builtIn: true
         });
 
-        // Office Tower (25m x 20m)
-        const offW = 12.5 * DEG_PER_M, offD = 10 * DEG_PER_M;
+        // --- Multi-Unit & Medium Density ---
+
+        // Walk-up apartment (RS zone max: 3 storeys, 20m × 14m)
         this.templates.push({
-            name: 'Office Tower',
-            relativeFootprint: [
-                { dLat: -offD, dLng: -offW },
-                { dLat: -offD, dLng: offW },
-                { dLat: offD, dLng: offW },
-                { dLat: offD, dLng: -offW }
-            ],
-            height: 42, storeys: 12, color: '#8899AA',
+            name: 'Walk-up Apt (3F)',
+            relativeFootprint: rect(20, 14),
+            height: 10.5, storeys: 3, color: '#998877',
             builtIn: true
         });
 
-        // L-Shape Building
-        const u = 3 * DEG_PER_M;
+        // Mid-rise apartment (RM zone: 4 storeys, 30m × 16m)
+        this.templates.push({
+            name: 'Mid-Rise Apt (4F)',
+            relativeFootprint: rect(30, 16),
+            height: 14, storeys: 4, color: '#8A7A6A',
+            builtIn: true
+        });
+
+        // --- Commercial & Mixed-Use ---
+
+        // Small retail / strip mall unit (15m × 20m)
+        this.templates.push({
+            name: 'Retail / Strip Mall',
+            relativeFootprint: rect(15, 20),
+            height: 5, storeys: 1, color: '#9AA8B8',
+            builtIn: true
+        });
+
+        // Office building (25m × 20m, 6-storey)
+        this.templates.push({
+            name: 'Office (6F)',
+            relativeFootprint: rect(25, 20),
+            height: 24, storeys: 6, color: '#8899AA',
+            builtIn: true
+        });
+
+        // --- Larger Typologies ---
+
+        // Office tower (30m × 25m, 12 storeys)
+        this.templates.push({
+            name: 'Tower (12F)',
+            relativeFootprint: rect(30, 25),
+            height: 42, storeys: 12, color: '#7888A0',
+            builtIn: true
+        });
+
+        // Warehouse / light industrial (30m × 60m)
+        this.templates.push({
+            name: 'Warehouse',
+            relativeFootprint: rect(30, 60),
+            height: 10, storeys: 1, color: '#8A9088',
+            builtIn: true
+        });
+
+        // --- Non-Rectangular Shapes ---
+
+        // L-shape building (e.g., courtyard apartment)
+        const u = 3 * D;
         this.templates.push({
             name: 'L-Shape',
             relativeFootprint: [
-                { dLat: -3*u, dLng: -3*u },
-                { dLat: -3*u, dLng: 3*u },
-                { dLat: 0, dLng: 3*u },
-                { dLat: 0, dLng: 0 },
-                { dLat: 3*u, dLng: 0 },
-                { dLat: 3*u, dLng: -3*u }
+                { dLat: -4*u, dLng: -4*u },
+                { dLat: -4*u, dLng:  4*u },
+                { dLat:   0,  dLng:  4*u },
+                { dLat:   0,  dLng:   0  },
+                { dLat:  4*u, dLng:   0  },
+                { dLat:  4*u, dLng: -4*u }
             ],
             height: 10.5, storeys: 3, color: '#AABB99',
+            builtIn: true
+        });
+
+        // U-shape courtyard building
+        const v = 2.5 * D;
+        this.templates.push({
+            name: 'U-Shape Courtyard',
+            relativeFootprint: [
+                { dLat: -5*v, dLng: -5*v },
+                { dLat: -5*v, dLng:  5*v },
+                { dLat: -3*v, dLng:  5*v },
+                { dLat: -3*v, dLng:  2*v },
+                { dLat:  3*v, dLng:  2*v },
+                { dLat:  3*v, dLng:  5*v },
+                { dLat:  5*v, dLng:  5*v },
+                { dLat:  5*v, dLng: -5*v }
+            ],
+            height: 14, storeys: 4, color: '#99AA88',
             builtIn: true
         });
 
