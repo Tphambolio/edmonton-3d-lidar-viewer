@@ -49,26 +49,34 @@
             </label>
         </div>
 
-        <div class="upload-section">
-            <h3>Replace Building Model</h3>
-            <p class="hint">Click a building first, then choose a model or upload your own.</p>
-            <div class="model-selector">
-                <select id="modelSelect" disabled>
-                    <option value="">-- Select model --</option>
-                </select>
-                <button id="applyModelBtn" disabled>Apply</button>
-                <button id="rotateModelBtn" disabled title="Rotate model 90°">↻ 90°</button>
-            </div>
-            <div class="upload-divider">or upload custom</div>
-            <input type="file" id="modelUpload" accept=".glb,.gltf,.skp,.obj,.fbx,.dae,.3ds,.stl,.ply" disabled>
-            <div id="dropZone" class="drop-zone">Or drag & drop 3D model here (.glb, .skp, .obj, .fbx, .stl)</div>
-            <div id="selectedBuilding">No building selected</div>
-        </div>
-
         <div class="building-tool-section">
-            <h3>Custom Building Tool</h3>
+            <h3>Building Tool</h3>
+            <div class="lot-controls">
+                <label class="lot-toggle">
+                    <input type="checkbox" id="showLotsCheckbox">
+                    <span>Show Lot Boundaries</span>
+                </label>
+                <span id="lotStatus" class="lot-status"></span>
+            </div>
+            <div id="selectedBuilding" class="selected-building-bar hidden"></div>
             <div id="buildToolIdle">
-                <button id="drawBuildingBtn" class="btn-draw">Draw Building</button>
+                <div class="dimension-input-row">
+                    <div class="dim-input-box">
+                        <label>W</label>
+                        <input type="number" id="inputWidth" min="3" max="200" value="12" step="0.5">
+                        <span>m</span>
+                    </div>
+                    <span class="dim-x">&times;</span>
+                    <div class="dim-input-box">
+                        <label>D</label>
+                        <input type="number" id="inputDepth" min="3" max="200" value="10" step="0.5">
+                        <span>m</span>
+                    </div>
+                </div>
+                <div class="idle-buttons">
+                    <button id="placeBuildingBtn" class="btn-draw">Place on Map</button>
+                    <button id="drawBuildingBtn" class="btn-draw btn-draw-alt">Draw Custom</button>
+                </div>
             </div>
             <div id="buildToolDrawing" class="hidden">
                 <p class="drawing-hint">Click on the map to place corners.<br>Double-click or press Done to finish.</p>
@@ -226,6 +234,20 @@
                     <button id="createBuildingBtn" class="btn-create">Quick (flat)</button>
                     <button id="resetFootprintBtn" class="btn-cancel">Reset</button>
                 </div>
+
+                <div class="model-upload-section">
+                    <div class="config-group-title">Or Use Pre-made Model</div>
+                    <div class="model-selector">
+                        <select id="modelSelect">
+                            <option value="">-- Select model --</option>
+                        </select>
+                        <button id="applyModelBtn" class="btn-create">Apply</button>
+                        <button id="rotateModelBtn" disabled title="Rotate model 90°">↻ 90°</button>
+                    </div>
+                    <div class="upload-divider">or upload custom</div>
+                    <input type="file" id="modelUpload" accept=".glb,.gltf,.skp,.obj,.fbx,.dae,.3ds,.stl,.ply">
+                    <div id="dropZone" class="drop-zone">Drag & drop 3D model (.glb, .skp, .obj, .fbx, .stl)</div>
+                </div>
             </div>
             <div id="customBuildingList" class="hidden">
                 <div id="customBuildingItems"></div>
@@ -249,6 +271,7 @@
     <script src="js/geocoder.js"></script>
     <script src="js/buildings.js"></script>
     <script src="js/building-tool.js"></script>
+    <script src="js/lot-loader.js"></script>
     <script src="js/trees.js"></script>
     <script src="js/app.js"></script>
     <script type="module" src="js/building-generator.js"></script>
