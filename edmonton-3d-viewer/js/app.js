@@ -1577,10 +1577,6 @@ function setupLotUI() {
         const lat = Cesium.Math.toDegrees(carto.latitude);
         const lng = Cesium.Math.toDegrees(carto.longitude);
 
-        // Check if we clicked a building or existing entity first
-        const picked = viewer.scene.pick(click.position);
-        if (picked?.id && !LotLoader.isLotEntity(picked.id)) return;
-
         lotStatus.textContent = 'Identifying...';
         const result = await LotLoader.identifyParcel(lat, lng);
         if (!result) {
