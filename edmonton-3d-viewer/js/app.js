@@ -1591,8 +1591,22 @@ function setupLotUI() {
 
         // Show highlighted parcel
         LotLoader.showSelectedParcel(result.polygon, result.properties);
-        const address = result.properties.BESTADDRESS || 'Unknown';
+        const props = result.properties;
+        const address = props.BESTADDRESS || 'Unknown';
         lotStatus.textContent = address;
+
+        // Show parcel info in info box
+        const infoContent = document.getElementById('infoContent');
+        const infoBox = document.getElementById('infoBox');
+        let html = `<h3>${address}</h3><table class="parcel-info">`;
+        if (props.SHORT_LEGAL_LABEL) html += `<tr><td>Legal</td><td>${props.SHORT_LEGAL_LABEL}</td></tr>`;
+        if (props.NEIGHBOURHOOD_NAME) html += `<tr><td>Neighbourhood</td><td>${props.NEIGHBOURHOOD_NAME}</td></tr>`;
+        if (props.WARD_NAME) html += `<tr><td>Ward</td><td>${props.WARD_NAME}</td></tr>`;
+        if (props.COMMUNITY_LEAGUE_NAME) html += `<tr><td>Community League</td><td>${props.COMMUNITY_LEAGUE_NAME}</td></tr>`;
+        if (props.PARK_DISTRICT_AREA) html += `<tr><td>Park District</td><td>${props.PARK_DISTRICT_AREA}</td></tr>`;
+        html += `</table>`;
+        infoContent.innerHTML = html;
+        infoBox.classList.remove('hidden');
 
         // Feed polygon to BuildingTool
         BuildingTool.cancel();
