@@ -1217,11 +1217,7 @@ const BuildingTool = {
      * Auto-place a template within the buildable envelope of the current lot.
      */
     autoPlaceTemplate(templateName) {
-        const fitCheck = this.templateFitsLot(templateName);
         if (!this.hasLot()) return { ok: false, reason: 'No lot selected' };
-        if (!fitCheck.fits) {
-            return { ok: false, reason: `${templateName}: too large for this lot` };
-        }
 
         const template = this.templates.find(t => t.name === templateName);
         if (!template) return { ok: false, reason: 'Template not found' };
@@ -1247,6 +1243,7 @@ const BuildingTool = {
             fits = (tplD <= envW && tplW <= envD);
             if (fits) useRotated = true;
         }
+        const exceedsSetbacks = !fits;
 
         // Get envelope geometry for placement
         const env = this._buildableEnvelope;
@@ -1299,7 +1296,7 @@ const BuildingTool = {
         this._updatePreview();
         this._updateMeasurements();
         this._fireUpdate();
-        return { ok: true, template: templateName };
+        return { ok: true, template: templateName, exceedsSetbacks };
     },
 
     _persistTemplates() {

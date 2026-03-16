@@ -1619,11 +1619,11 @@ function renderTemplateList() {
 
     list.innerHTML = templates.map(t => {
         const fitInfo = hasLot ? BuildingTool.templateFitsLot(t.name) : { fits: true };
-        const disabledClass = fitInfo.fits ? '' : ' chip-disabled';
+        const oversizeClass = (!fitInfo.fits && hasLot) ? ' chip-oversize' : '';
         const tooltip = fitInfo.fits
             ? `${t.name}${t.height ? ' (' + t.height + 'm, ' + (t.storeys || '?') + 'F)' : ''}`
-            : `Too large: ${fitInfo.tplW}m x ${fitInfo.tplD}m (lot: ${fitInfo.envW}m x ${fitInfo.envD}m)`;
-        return `<span class="template-chip${t.builtIn ? ' builtin' : ''}${disabledClass}" data-template="${t.name}" title="${tooltip}">
+            : `Exceeds setbacks: ${fitInfo.tplW}m x ${fitInfo.tplD}m (buildable: ${fitInfo.envW}m x ${fitInfo.envD}m)`;
+        return `<span class="template-chip${t.builtIn ? ' builtin' : ''}${oversizeClass}" data-template="${t.name}" title="${tooltip}">
             <span class="chip-color" style="background:${t.color || '#888'}"></span>
             <span>${t.name}</span>
             ${!t.builtIn ? '<span class="chip-delete" data-del="' + t.name + '">&times;</span>' : ''}
@@ -1634,7 +1634,6 @@ function renderTemplateList() {
     list.querySelectorAll('.template-chip').forEach(chip => {
         chip.addEventListener('click', (e) => {
             if (e.target.classList.contains('chip-delete')) return;
-            if (chip.classList.contains('chip-disabled')) return;
 
             const name = chip.dataset.template;
             const template = BuildingTool.templates.find(t => t.name === name);
@@ -1653,11 +1652,15 @@ function renderTemplateList() {
                 document.getElementById('buildColorPicker').value = template.color;
             }
 
-            // If a lot is selected, auto-place the template within setbacks
+            // If a lot is selected, auto-place the template on the lot
             if (BuildingTool.hasLot()) {
                 const result = BuildingTool.autoPlaceTemplate(name);
                 if (result.ok) {
-                    setStatus(`Placed ${name} on lot`);
+                    if (result.exceedsSetbacks) {
+                        setStatus(`Placed ${name} (exceeds setbacks)`);
+                    } else {
+                        setStatus(`Placed ${name} on lot`);
+                    }
                 } else {
                     setStatus(result.reason);
                 }
