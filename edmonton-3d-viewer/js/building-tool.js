@@ -1200,13 +1200,17 @@ const BuildingTool = {
         // Also set clipboard for height/color/storeys
         this.applyTemplate(templateName);
 
+        // Use cosine-corrected metres from the envelope (not raw 111000)
+        const env = this._buildableEnvelope;
+        const mLat = env._mPerDegLat;
+        const mLng = env._mPerDegLng;
+
         // Compute template dimensions from relativeFootprint
-        const D = 111000; // degrees to metres
         const fp = template.relativeFootprint;
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
         for (const p of fp) {
-            const mx = p.dLng * D;
-            const my = p.dLat * D;
+            const mx = p.dLng * mLng;
+            const my = p.dLat * mLat;
             if (mx < minX) minX = mx; if (mx > maxX) maxX = mx;
             if (my < minY) minY = my; if (my > maxY) maxY = my;
         }
@@ -1233,8 +1237,6 @@ const BuildingTool = {
         }
 
         // Get envelope geometry for placement
-        const env = this._buildableEnvelope;
-        const lotAngle = env.angle;
         const nrX = env._nrX, nrY = env._nrY;  // front-to-rear direction
         const fdX = env._fdX, fdY = env._fdY;  // side direction
 
@@ -1243,11 +1245,7 @@ const BuildingTool = {
         const placeLng = env.frontCenter.lng;
 
         // Rotate template footprint to match lot orientation
-        // Template footprint is in dLat/dLng (Y=north, X=east)
-        // Lot has angle + front-to-rear direction
         const refLat = env._refLat;
-        const mLat = env._mPerDegLat;
-        const mLng = env._mPerDegLng;
 
         // Convert place point to local metres
         const pcX = (placeLng - env._refLng) * mLng;
@@ -1263,8 +1261,8 @@ const BuildingTool = {
         // Transform each template vertex
         this.cancel();
         this._points = fp.map(p => {
-            const mx = p.dLng * D;  // template local X (metres)
-            const my = p.dLat * D;  // template local Y (metres)
+            const mx = p.dLng * mLng;  // template local X (proper metres)
+            const my = p.dLat * mLat;  // template local Y (proper metres)
 
             // Rotate to lot orientation
             const rx = mx * cosB + my * cosA;
