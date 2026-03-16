@@ -14,10 +14,14 @@ const LotLoader = {
     _viewer: null,
     _imageryLayer: null,
     _selectedEntity: null,
+    _selectedEntities: [],    // multi-lot highlight entities
     _setbackEntities: [],
     _enabled: false,
     _lots: [],        // fallback only
     _entities: [],    // fallback only
+
+    // Multi-lot selection
+    _selectedParcels: [],     // [{polygon, properties}, ...]
 
     // Setbacks for fallback approximation (metres)
     FRONT_SETBACK: 4.5,
@@ -335,11 +339,138 @@ const LotLoader = {
         this._setbackEntities = [];
     },
 
+    /**
+     * Multi-lot selection: add a parcel to the current selection.
+     * Returns false if the parcel is already selected (by address match).
+     */
+    addParcel(polygon, properties) {
+        const addr = properties?.BESTADDRESS || '';
+        // Check for duplicate by address
+        if (addr && this._selectedParcels.some(p => p.properties?.BESTADDRESS === addr)) {
+            return false;
+        }
+        this._selectedParcels.push({ polygon, properties });
+        return true;
+    },
+
+    /**
+     * Remove a parcel from multi-selection by address.
+     */
+    removeParcel(address) {
+        const idx = this._selectedParcels.findIndex(p => p.properties?.BESTADDRESS === address);
+        if (idx >= 0) {
+            this._selectedParcels.splice(idx, 1);
+            return true;
+        }
+        return false;
+    },
+
+    /**
+     * Get the merged polygon from all selected parcels.
+     * Uses convex hull of all vertices — works well for adjacent rectangular lots.
+     */
+    getMergedPolygon() {
+        if (this._selectedParcels.length === 0) return null;
+        if (this._selectedParcels.length === 1) return this._selectedParcels[0].polygon;
+
+        // Collect all vertices from all parcels
+        const refLat = this._selectedParcels[0].polygon[0].lat;
+        const refLng = this._selectedParcels[0].polygon[0].lng;
+        const mLat = 111000;
+        const mLng = 111000 * Math.cos(refLat * Math.PI / 180);
+
+        const allPts = [];
+        for (const parcel of this._selectedParcels) {
+            for (const p of parcel.polygon) {
+                allPts.push({
+                    x: (p.lng - refLng) * mLng,
+                    y: (p.lat - refLat) * mLat
+                });
+            }
+        }
+
+        const hull = this._convexHull(allPts);
+        return hull.map(p => ({
+            lat: refLat + p.y / mLat,
+            lng: refLng + p.x / mLng
+        }));
+    },
+
+    /**
+     * Get merged properties summary for multi-lot display.
+     */
+    getMergedProperties() {
+        if (this._selectedParcels.length === 0) return {};
+        if (this._selectedParcels.length === 1) return this._selectedParcels[0].properties;
+        const addresses = this._selectedParcels
+            .map(p => p.properties?.BESTADDRESS || '?')
+            .join(' + ');
+        return {
+            BESTADDRESS: `${this._selectedParcels.length} lots: ${addresses}`,
+            NEIGHBOURHOOD_NAME: this._selectedParcels[0].properties?.NEIGHBOURHOOD_NAME || '',
+            _multiLot: true,
+            _lotCount: this._selectedParcels.length
+        };
+    },
+
+    /**
+     * Show highlighted polygons for all selected parcels.
+     */
+    showSelectedParcels() {
+        // Clear previous highlights
+        for (const e of this._selectedEntities) {
+            this._viewer.entities.remove(e);
+        }
+        this._selectedEntities = [];
+        if (this._selectedEntity) {
+            this._viewer.entities.remove(this._selectedEntity);
+            this._selectedEntity = null;
+        }
+
+        const groundH = (Buildings?._terrainHeight || 0) + 0.3;
+
+        for (const parcel of this._selectedParcels) {
+            const positions = [];
+            for (const p of parcel.polygon) {
+                positions.push(p.lng, p.lat);
+            }
+            const entity = this._viewer.entities.add({
+                name: 'selected_parcel',
+                polygon: {
+                    hierarchy: Cesium.Cartesian3.fromDegreesArray(positions),
+                    height: groundH,
+                    material: Cesium.Color.YELLOW.withAlpha(0.25),
+                    outline: true,
+                    outlineColor: Cesium.Color.WHITE,
+                    outlineWidth: 2,
+                    heightReference: Cesium.HeightReference.NONE
+                },
+                properties: {
+                    isLot: true,
+                    address: parcel.properties?.BESTADDRESS || ''
+                }
+            });
+            this._selectedEntities.push(entity);
+        }
+    },
+
+    /**
+     * Clear all multi-lot state.
+     */
+    clearAllParcels() {
+        this._selectedParcels = [];
+        for (const e of this._selectedEntities) {
+            this._viewer.entities.remove(e);
+        }
+        this._selectedEntities = [];
+    },
+
     clearSelectedParcel() {
         if (this._selectedEntity) {
             this._viewer.entities.remove(this._selectedEntity);
             this._selectedEntity = null;
         }
+        this.clearAllParcels();
         this.clearSetbackLines();
     },
 

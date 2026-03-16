@@ -13,6 +13,11 @@ let searchMarker = null;
 let osmLayer = null;
 let satelliteLayer = null;
 
+// Shift key state for multi-lot selection
+let _shiftDown = false;
+document.addEventListener('keydown', e => { if (e.key === 'Shift') _shiftDown = true; });
+document.addEventListener('keyup', e => { if (e.key === 'Shift') _shiftDown = false; });
+
 // 3D model conversion service URL (unified gateway for all formats)
 const CONVERT_API = new URLSearchParams(window.location.search).get('convertApi') || '';
 const NATIVE_3D_FORMATS = ['.glb', '.gltf'];
@@ -52,36 +57,94 @@ function showParcelResult(result) {
 async function autoIdentifyParcel(lat, lng) {
     const lotStatus = document.getElementById('lotStatus');
     if (lotStatus) lotStatus.textContent = 'Identifying parcel...';
-    console.log(`Auto-identify parcel at ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
 
     const result = await LotLoader.identifyParcel(lat, lng);
-    console.log('Auto-identify result:', result ? result.properties?.BESTADDRESS : 'null');
     if (result) {
+        // Start fresh single-lot selection
+        LotLoader.clearAllParcels();
+        LotLoader.addParcel(result.polygon, result.properties);
         showParcelResult(result);
-        setupLotForBuilding(result.polygon, result.properties, { lat, lng });
+        setupLotFromSelection({ lat, lng });
     } else if (lotStatus) {
         lotStatus.textContent = 'Parcel overlay active';
     }
 }
 
 /**
- * Analyze lot geometry, compute setbacks, and store on BuildingTool.
- * Does NOT place a building — waits for template click.
+ * Add a parcel to the multi-lot selection (shift+click).
+ * If already selected, removes it. Then rebuilds the merged lot.
  */
-function setupLotForBuilding(polygon, properties, refPoint) {
-    const geom = LotLoader.analyzeLotGeometry(polygon, refPoint);
+async function addParcelToSelection(lat, lng) {
+    const lotStatus = document.getElementById('lotStatus');
+    if (lotStatus) lotStatus.textContent = 'Adding lot...';
+
+    const result = await LotLoader.identifyParcel(lat, lng);
+    if (!result) {
+        if (lotStatus) lotStatus.textContent = `${LotLoader._selectedParcels.length} lot(s) selected`;
+        return;
+    }
+
+    const addr = result.properties?.BESTADDRESS || '';
+    // Toggle: if already selected, remove it
+    if (addr && LotLoader._selectedParcels.some(p => p.properties?.BESTADDRESS === addr)) {
+        LotLoader.removeParcel(addr);
+        if (LotLoader._selectedParcels.length === 0) {
+            LotLoader.clearSelectedParcel();
+            BuildingTool.clearLot();
+            if (lotStatus) lotStatus.textContent = 'Parcel overlay active';
+            return;
+        }
+    } else {
+        LotLoader.addParcel(result.polygon, result.properties);
+    }
+
+    setupLotFromSelection({ lat, lng });
+}
+
+/**
+ * Build the lot context from the current multi-lot selection.
+ * Uses merged polygon for geometry analysis and envelope computation.
+ */
+function setupLotFromSelection(refPoint) {
+    const merged = LotLoader.getMergedPolygon();
+    const props = LotLoader.getMergedProperties();
+    if (!merged || merged.length < 3) return;
+
+    // Show all selected parcels highlighted
+    LotLoader.showSelectedParcels();
+
+    const geom = LotLoader.analyzeLotGeometry(merged, refPoint);
     const envelope = geom ? LotLoader.computeBuildableEnvelope(geom) : null;
 
     BuildingTool.cancel();
-    BuildingTool.setLot(polygon, geom, envelope, properties);
+    BuildingTool.setLot(merged, geom, envelope, props);
 
     if (envelope && envelope.polygon.length >= 3) {
         LotLoader.showSetbackLines(envelope);
         const lotStatus = document.getElementById('lotStatus');
         if (lotStatus) {
-            const addr = properties?.BESTADDRESS || 'Selected';
-            lotStatus.textContent = `${addr} — ${envelope.width}m × ${envelope.depth}m buildable`;
+            const count = LotLoader._selectedParcels.length;
+            const prefix = count > 1 ? `${count} lots` : (props.BESTADDRESS || 'Selected');
+            lotStatus.textContent = `${prefix} — ${envelope.width}m × ${envelope.depth}m buildable`;
         }
+    }
+
+    // Show info box for multi-lot
+    if (LotLoader._selectedParcels.length > 1) {
+        const infoContent = document.getElementById('infoContent');
+        const infoBox = document.getElementById('infoBox');
+        let html = '<table>';
+        html += `<tr><td>Lots</td><td>${LotLoader._selectedParcels.length}</td></tr>`;
+        for (const p of LotLoader._selectedParcels) {
+            html += `<tr><td></td><td style="font-size:11px">${p.properties?.BESTADDRESS || '?'}</td></tr>`;
+        }
+        if (envelope) {
+            html += `<tr><td>Buildable</td><td>${envelope.width}m × ${envelope.depth}m</td></tr>`;
+        }
+        html += '</table>';
+        html += '<div style="margin-top:6px;font-size:10px;color:#888">Shift+click to add/remove lots</div>';
+        infoContent.innerHTML = html;
+        infoBox.classList.remove('hidden');
     }
 
     BuildingTool._fireUpdate();
@@ -239,14 +302,22 @@ function setupUI() {
             const lat = Cesium.Math.toDegrees(carto.latitude);
             const lng = Cesium.Math.toDegrees(carto.longitude);
 
-            const lotStatus = document.getElementById('lotStatus');
-            lotStatus.textContent = 'Identifying...';
-            const result = await LotLoader.identifyParcel(lat, lng);
-            if (result) {
-                showParcelResult(result);
-                setupLotForBuilding(result.polygon, result.properties, { lat, lng });
+            // Shift+click = add to multi-lot selection
+            if (_shiftDown && LotLoader._selectedParcels.length > 0) {
+                addParcelToSelection(lat, lng);
             } else {
-                lotStatus.textContent = 'Parcel overlay active';
+                // Normal click = fresh single-lot selection
+                const lotStatus = document.getElementById('lotStatus');
+                lotStatus.textContent = 'Identifying...';
+                LotLoader.clearAllParcels();
+                const result = await LotLoader.identifyParcel(lat, lng);
+                if (result) {
+                    LotLoader.addParcel(result.polygon, result.properties);
+                    showParcelResult(result);
+                    setupLotFromSelection({ lat, lng });
+                } else {
+                    lotStatus.textContent = 'Parcel overlay active';
+                }
             }
         }
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
