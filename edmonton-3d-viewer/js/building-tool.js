@@ -804,7 +804,7 @@ const BuildingTool = {
             const edx = (points[j].lng - points[i].lng) * cosLat;
             const edy = points[j].lat - points[i].lat;
             const angle = Math.atan2(edx, edy);
-            const cosA = Math.cos(-angle), sinA = Math.sin(-angle);
+            const cosA = Math.cos(angle), sinA = Math.sin(angle);
             let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
             for (const p of points) {
                 const px = (p.lng - centLng) * cosLat;
@@ -1200,17 +1200,16 @@ const BuildingTool = {
         // Also set clipboard for height/color/storeys
         this.applyTemplate(templateName);
 
-        // Use cosine-corrected metres from the envelope (not raw 111000)
-        const env = this._buildableEnvelope;
-        const mLat = env._mPerDegLat;
-        const mLng = env._mPerDegLng;
+        // Template dLng/dLat encode intended metres / 111000.
+        // Use D=111000 to recover intended physical dimensions.
+        const D = 111000;
 
         // Compute template dimensions from relativeFootprint
         const fp = template.relativeFootprint;
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
         for (const p of fp) {
-            const mx = p.dLng * mLng;
-            const my = p.dLat * mLat;
+            const mx = p.dLng * D;
+            const my = p.dLat * D;
             if (mx < minX) minX = mx; if (mx > maxX) maxX = mx;
             if (my < minY) minY = my; if (my > maxY) maxY = my;
         }
@@ -1237,6 +1236,9 @@ const BuildingTool = {
         }
 
         // Get envelope geometry for placement
+        const env = this._buildableEnvelope;
+        const mLat = env._mPerDegLat;
+        const mLng = env._mPerDegLng;
         const nrX = env._nrX, nrY = env._nrY;  // front-to-rear direction
         const fdX = env._fdX, fdY = env._fdY;  // side direction
 
@@ -1261,8 +1263,8 @@ const BuildingTool = {
         // Transform each template vertex
         this.cancel();
         this._points = fp.map(p => {
-            const mx = p.dLng * mLng;  // template local X (proper metres)
-            const my = p.dLat * mLat;  // template local Y (proper metres)
+            const mx = p.dLng * D;  // template local X (intended metres)
+            const my = p.dLat * D;  // template local Y (intended metres)
 
             // Rotate to lot orientation
             const rx = mx * cosB + my * cosA;
