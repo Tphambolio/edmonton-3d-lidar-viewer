@@ -52,8 +52,10 @@ function showParcelResult(result) {
 async function autoIdentifyParcel(lat, lng) {
     const lotStatus = document.getElementById('lotStatus');
     if (lotStatus) lotStatus.textContent = 'Identifying parcel...';
+    console.log(`Auto-identify parcel at ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
 
     const result = await LotLoader.identifyParcel(lat, lng);
+    console.log('Auto-identify result:', result ? result.properties?.BESTADDRESS : 'null');
     if (result) {
         showParcelResult(result);
         // Feed parcel polygon into BuildingTool for immediate use
@@ -457,7 +459,7 @@ async function loadScene(lat, lng, radiusM) {
         await LotLoader.loadAround(0, 0, 0);
         const lotStatus = document.getElementById('lotStatus');
         if (lotStatus) lotStatus.textContent = 'Parcel overlay active';
-        autoIdentifyParcel(lat, lng);
+        await autoIdentifyParcel(lat, lng);
     }
 
     updateStats();
