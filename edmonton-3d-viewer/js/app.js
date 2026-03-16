@@ -133,7 +133,7 @@ function setupUI() {
 
     // Building click handler
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-    handler.setInputAction((click) => {
+    handler.setInputAction(async (click) => {
         // Don't intercept clicks when BuildingTool is drawing
         if (BuildingTool.mode === 'drawing') return;
 
@@ -143,21 +143,58 @@ function setupUI() {
             // Entity pick (buildings)
             if (picked.id && picked.id.name?.startsWith('bldg_')) {
                 selectBuilding(picked.id);
-                return;
             }
             // Custom building pick
-            if (picked.id && picked.id.name?.startsWith('custom_build_')) {
+            else if (picked.id && picked.id.name?.startsWith('custom_build_')) {
                 selectCustomBuilding(picked.id);
-                return;
             }
             // 3D Tileset pick (trees) — ignore, don't deselect
-            if (picked instanceof Cesium.Cesium3DTileFeature) {
+            else if (picked instanceof Cesium.Cesium3DTileFeature) {
                 console.log('Clicked tree tileset — ignoring');
-                return;
+            }
+            else {
+                selectBuilding(null);
+                selectCustomBuilding(null);
+            }
+        } else {
+            selectBuilding(null);
+            selectCustomBuilding(null);
+        }
+
+        // Also identify parcel if lot boundaries are enabled
+        const lotsCheckbox = document.getElementById('showLotsCheckbox');
+        if (lotsCheckbox?.checked) {
+            const ray = viewer.camera.getPickRay(click.position);
+            const cartesian = viewer.scene.globe.pick(ray, viewer.scene);
+            if (!cartesian) return;
+            const carto = Cesium.Cartographic.fromCartesian(cartesian);
+            const lat = Cesium.Math.toDegrees(carto.latitude);
+            const lng = Cesium.Math.toDegrees(carto.longitude);
+
+            const lotStatus = document.getElementById('lotStatus');
+            lotStatus.textContent = 'Identifying...';
+            const result = await LotLoader.identifyParcel(lat, lng);
+            if (result) {
+                LotLoader.showSelectedParcel(result.polygon, result.properties);
+                const props = result.properties;
+                const address = props.BESTADDRESS || 'Unknown';
+                lotStatus.textContent = address;
+
+                const infoContent = document.getElementById('infoContent');
+                const infoBox = document.getElementById('infoBox');
+                let html = `<h3>${address}</h3><table class="parcel-info">`;
+                if (props.SHORT_LEGAL_LABEL) html += `<tr><td>Legal</td><td>${props.SHORT_LEGAL_LABEL}</td></tr>`;
+                if (props.NEIGHBOURHOOD_NAME) html += `<tr><td>Neighbourhood</td><td>${props.NEIGHBOURHOOD_NAME}</td></tr>`;
+                if (props.WARD_NAME) html += `<tr><td>Ward</td><td>${props.WARD_NAME}</td></tr>`;
+                if (props.COMMUNITY_LEAGUE_NAME) html += `<tr><td>Community League</td><td>${props.COMMUNITY_LEAGUE_NAME}</td></tr>`;
+                if (props.PARK_DISTRICT_AREA) html += `<tr><td>Park District</td><td>${props.PARK_DISTRICT_AREA}</td></tr>`;
+                html += `</table>`;
+                infoContent.innerHTML = html;
+                infoBox.classList.remove('hidden');
+            } else {
+                lotStatus.textContent = 'Parcel overlay active';
             }
         }
-        selectBuilding(null);
-        selectCustomBuilding(null);
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
     // Populate model dropdown from catalog
