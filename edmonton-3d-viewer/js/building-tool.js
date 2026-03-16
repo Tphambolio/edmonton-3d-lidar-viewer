@@ -1182,16 +1182,45 @@ const BuildingTool = {
         this._lotGeometry = null;
         this._buildableEnvelope = null;
         this._lotProperties = null;
+        this._fireUpdate();
+    },
+
+    hasLot() {
+        return !!(this._lotPolygon && this._buildableEnvelope && this._buildableEnvelope.width > 0);
+    },
+
+    /**
+     * Check if a template fits the current lot (non-mutating).
+     * Returns { fits, tplW, tplD, envW, envD }.
+     */
+    templateFitsLot(templateName) {
+        if (!this.hasLot()) return { fits: true };
+        const template = this.templates.find(t => t.name === templateName);
+        if (!template) return { fits: false };
+        const D = 111000;
+        const fp = template.relativeFootprint;
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const p of fp) {
+            const mx = p.dLng * D, my = p.dLat * D;
+            if (mx < minX) minX = mx; if (mx > maxX) maxX = mx;
+            if (my < minY) minY = my; if (my > maxY) maxY = my;
+        }
+        const tplW = Math.round((maxX - minX) * 10) / 10;
+        const tplD = Math.round((maxY - minY) * 10) / 10;
+        const envW = this._buildableEnvelope.width;
+        const envD = this._buildableEnvelope.depth;
+        const fits = (tplW <= envW && tplD <= envD) || (tplD <= envW && tplW <= envD);
+        return { fits, tplW, tplD, envW, envD };
     },
 
     /**
      * Auto-place a template within the buildable envelope of the current lot.
-     * Returns true if placed, false if doesn't fit or no lot.
      */
     autoPlaceTemplate(templateName) {
-        if (!this._buildableEnvelope || this._buildableEnvelope.width <= 0) {
-            console.warn('No buildable envelope — cannot auto-place');
-            return { ok: false, reason: 'No lot selected' };
+        const fitCheck = this.templateFitsLot(templateName);
+        if (!this.hasLot()) return { ok: false, reason: 'No lot selected' };
+        if (!fitCheck.fits) {
+            return { ok: false, reason: `${templateName}: too large for this lot` };
         }
 
         const template = this.templates.find(t => t.name === templateName);
@@ -1200,39 +1229,23 @@ const BuildingTool = {
         // Also set clipboard for height/color/storeys
         this.applyTemplate(templateName);
 
-        // Template dLng/dLat encode intended metres / 111000.
-        // Use D=111000 to recover intended physical dimensions.
         const D = 111000;
-
-        // Compute template dimensions from relativeFootprint
         const fp = template.relativeFootprint;
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
         for (const p of fp) {
-            const mx = p.dLng * D;
-            const my = p.dLat * D;
+            const mx = p.dLng * D, my = p.dLat * D;
             if (mx < minX) minX = mx; if (mx > maxX) maxX = mx;
             if (my < minY) minY = my; if (my > maxY) maxY = my;
         }
-        const tplW = maxX - minX;
-        const tplD = maxY - minY;
-
+        const tplW = maxX - minX, tplD = maxY - minY;
         const envW = this._buildableEnvelope.width;
         const envD = this._buildableEnvelope.depth;
 
-        // Try both orientations
         let useRotated = false;
         let fits = (tplW <= envW && tplD <= envD);
         if (!fits) {
-            // Try rotated 90°
             fits = (tplD <= envW && tplW <= envD);
             if (fits) useRotated = true;
-        }
-
-        if (!fits) {
-            return {
-                ok: false,
-                reason: `Template ${templateName} (${tplW.toFixed(1)}m × ${tplD.toFixed(1)}m) too large for buildable area (${envW}m × ${envD}m)`
-            };
         }
 
         // Get envelope geometry for placement

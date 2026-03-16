@@ -14,7 +14,7 @@
     </script>
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=3">
 </head>
 <body>
     <div id="cesiumContainer"></div>
@@ -60,31 +60,38 @@
             </div>
             <div id="selectedBuilding" class="selected-building-bar hidden"></div>
             <div id="buildToolIdle">
-                <div class="dimension-input-row">
-                    <div class="dim-input-box">
-                        <label>W</label>
-                        <input type="number" id="inputWidth" min="3" max="200" value="12" step="0.5">
-                        <span>m</span>
+                <!-- Manual placement controls: hidden when lot is selected -->
+                <div id="manualPlacementControls">
+                    <div class="dimension-input-row">
+                        <div class="dim-input-box">
+                            <label>W</label>
+                            <input type="number" id="inputWidth" min="3" max="200" value="12" step="0.5">
+                            <span>m</span>
+                        </div>
+                        <span class="dim-x">&times;</span>
+                        <div class="dim-input-box">
+                            <label>D</label>
+                            <input type="number" id="inputDepth" min="3" max="200" value="10" step="0.5">
+                            <span>m</span>
+                        </div>
                     </div>
-                    <span class="dim-x">&times;</span>
-                    <div class="dim-input-box">
-                        <label>D</label>
-                        <input type="number" id="inputDepth" min="3" max="200" value="10" step="0.5">
-                        <span>m</span>
+                    <div class="idle-buttons">
+                        <button id="placeBuildingBtn" class="btn-draw">Place on Map</button>
+                        <button id="rectDrawBtn" class="btn-draw btn-rect" title="Draw rectangle: click two opposite corners">Rectangle</button>
+                        <button id="drawBuildingBtn" class="btn-draw btn-draw-alt" title="Freeform polygon: click each corner">Draw</button>
                     </div>
-                </div>
-                <div class="idle-buttons">
-                    <button id="placeBuildingBtn" class="btn-draw">Place on Map</button>
-                    <button id="rectDrawBtn" class="btn-draw btn-rect" title="Draw rectangle: click two opposite corners">Rectangle</button>
-                    <button id="drawBuildingBtn" class="btn-draw btn-draw-alt" title="Freeform polygon: click each corner">Draw</button>
                 </div>
                 <!-- Templates -->
                 <div class="template-section">
                     <div class="template-header">
-                        <span>Templates</span>
+                        <span>TEMPLATES</span>
                         <button id="pasteBtn" class="btn-paste" disabled title="Paste copied building (Ctrl+V)">Paste</button>
                     </div>
                     <div class="template-list" id="templateList"></div>
+                </div>
+                <!-- Manual fallback link: shown when lot is selected -->
+                <div id="manualFallbackLink" class="hidden">
+                    <a href="#" id="manualFallbackToggle" class="manual-fallback-toggle">or draw manually...</a>
                 </div>
             </div>
             <div id="buildToolDrawing" class="hidden">
@@ -282,12 +289,12 @@
         <div id="infoContent"></div>
     </div>
 
-    <script src="js/geocoder.js?v=2"></script>
-    <script src="js/buildings.js?v=2"></script>
-    <script src="js/building-tool.js?v=2"></script>
-    <script src="js/lot-loader.js?v=2"></script>
-    <script src="js/trees.js?v=2"></script>
-    <script src="js/app.js?v=2"></script>
-    <script type="module" src="js/building-generator.js?v=2"></script>
+    <script src="js/geocoder.js?v=3"></script>
+    <script src="js/buildings.js?v=3"></script>
+    <script src="js/building-tool.js?v=3"></script>
+    <script src="js/lot-loader.js?v=3"></script>
+    <script src="js/trees.js?v=3"></script>
+    <script src="js/app.js?v=3"></script>
+    <script type="module" src="js/building-generator.js?v=3"></script>
 </body>
 </html>

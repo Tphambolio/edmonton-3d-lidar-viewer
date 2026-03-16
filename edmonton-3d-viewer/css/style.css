@@ -829,6 +829,29 @@ html, body, #cesiumContainer { width: 100%; height: 100%; overflow: hidden; }
 }
 .template-chip .chip-delete:hover { color: #e55; }
 .template-chip.builtin { border-style: dashed; }
+.template-chip.chip-disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    border-color: #444;
+}
+.template-chip.chip-disabled:hover {
+    background: #2a2a35;
+    border-color: #444;
+    color: #888;
+}
+
+.manual-fallback-toggle {
+    font-size: 10px;
+    color: #666;
+    text-decoration: none;
+    cursor: pointer;
+    display: inline-block;
+    margin-top: 4px;
+}
+.manual-fallback-toggle:hover {
+    color: #999;
+    text-decoration: underline;
+}
 
 /* Paste placement mode */
 .paste-placement-hint {

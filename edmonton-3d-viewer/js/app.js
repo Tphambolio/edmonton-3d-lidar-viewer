@@ -876,6 +876,13 @@ function setupBuildingToolUI() {
         BuildingTool.activateRectangle();
     });
 
+    // Manual fallback toggle — show manual controls when lot is selected
+    document.getElementById('manualFallbackToggle')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        const manual = document.getElementById('manualPlacementControls');
+        manual.classList.toggle('hidden');
+    });
+
     // Orthogonalize button — snap polygon to right angles
     const orthBtn = document.getElementById('orthogonalizeBtn');
     orthBtn.addEventListener('click', () => {
@@ -1397,6 +1404,16 @@ function setupBuildingToolUI() {
         drawDiv.classList.toggle('hidden', !isDrawing);
         configDiv.classList.toggle('hidden', !isConfig);
 
+        // When idle: show/hide manual controls based on lot context
+        if (mode === 'idle') {
+            const hasLot = BuildingTool.hasLot();
+            const manualControls = document.getElementById('manualPlacementControls');
+            const manualFallback = document.getElementById('manualFallbackLink');
+            if (manualControls) manualControls.classList.toggle('hidden', hasLot);
+            if (manualFallback) manualFallback.classList.toggle('hidden', !hasLot);
+            renderTemplateList();
+        }
+
         if (isDrawing) {
             if (mode === 'rect_first') {
                 drawingHint.innerHTML = 'Click to set the <b>first corner</b> of the rectangle.';
@@ -1589,19 +1606,26 @@ function renderTemplateList() {
         return;
     }
 
-    list.innerHTML = templates.map(t => `
-        <span class="template-chip${t.builtIn ? ' builtin' : ''}" data-template="${t.name}" title="${t.name}${t.height ? ' (' + t.height + 'm, ' + (t.storeys || '?') + 'F)' : ''}">
+    const hasLot = BuildingTool.hasLot();
+
+    list.innerHTML = templates.map(t => {
+        const fitInfo = hasLot ? BuildingTool.templateFitsLot(t.name) : { fits: true };
+        const disabledClass = fitInfo.fits ? '' : ' chip-disabled';
+        const tooltip = fitInfo.fits
+            ? `${t.name}${t.height ? ' (' + t.height + 'm, ' + (t.storeys || '?') + 'F)' : ''}`
+            : `Too large: ${fitInfo.tplW}m x ${fitInfo.tplD}m (lot: ${fitInfo.envW}m x ${fitInfo.envD}m)`;
+        return `<span class="template-chip${t.builtIn ? ' builtin' : ''}${disabledClass}" data-template="${t.name}" title="${tooltip}">
             <span class="chip-color" style="background:${t.color || '#888'}"></span>
             <span>${t.name}</span>
             ${!t.builtIn ? '<span class="chip-delete" data-del="' + t.name + '">&times;</span>' : ''}
-        </span>
-    `).join('');
+        </span>`;
+    }).join('');
 
     // Click template chip → auto-place on lot if selected, else enter paste mode
     list.querySelectorAll('.template-chip').forEach(chip => {
         chip.addEventListener('click', (e) => {
-            // Ignore if clicking delete button
             if (e.target.classList.contains('chip-delete')) return;
+            if (chip.classList.contains('chip-disabled')) return;
 
             const name = chip.dataset.template;
             const template = BuildingTool.templates.find(t => t.name === name);
@@ -1621,7 +1645,7 @@ function renderTemplateList() {
             }
 
             // If a lot is selected, auto-place the template within setbacks
-            if (BuildingTool._lotPolygon) {
+            if (BuildingTool.hasLot()) {
                 const result = BuildingTool.autoPlaceTemplate(name);
                 if (result.ok) {
                     setStatus(`Placed ${name} on lot`);
