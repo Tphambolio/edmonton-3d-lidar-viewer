@@ -115,7 +115,7 @@ const LotLoader = {
      * Show a highlighted polygon entity for the selected parcel.
      */
     showSelectedParcel(polygon, properties) {
-        this.clearSelectedParcel();
+        this.clearParcelVisuals();
         if (!polygon || polygon.length < 3) return;
 
         const positions = [];
@@ -465,13 +465,28 @@ const LotLoader = {
         this._selectedEntities = [];
     },
 
-    clearSelectedParcel() {
+    /**
+     * Clear visual parcel highlights and setback lines.
+     * Does NOT clear the _selectedParcels data array.
+     */
+    clearParcelVisuals() {
         if (this._selectedEntity) {
             this._viewer.entities.remove(this._selectedEntity);
             this._selectedEntity = null;
         }
-        this.clearAllParcels();
+        for (const e of this._selectedEntities) {
+            this._viewer.entities.remove(e);
+        }
+        this._selectedEntities = [];
         this.clearSetbackLines();
+    },
+
+    /**
+     * Full clear: visuals + parcel data.
+     */
+    clearSelectedParcel() {
+        this.clearParcelVisuals();
+        this._selectedParcels = [];
     },
 
     // Legacy API compatibility

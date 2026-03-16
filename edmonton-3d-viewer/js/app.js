@@ -28,10 +28,11 @@ const SKP_FORMAT = '.skp';
  * Display parcel identify result in the info box and lot status.
  * Shared by click handler and auto-identify on search.
  */
-function showParcelResult(result) {
+function showParcelResult(parcelOrResult) {
+    // Accept either {polygon, properties} or just {properties}
+    const result = parcelOrResult;
     if (!result) return;
-    LotLoader.showSelectedParcel(result.polygon, result.properties);
-    const props = result.properties;
+    const props = result.properties || result;
     const address = props.BESTADDRESS || 'Unknown';
 
     const lotStatus = document.getElementById('lotStatus');
@@ -61,9 +62,8 @@ async function autoIdentifyParcel(lat, lng) {
     const result = await LotLoader.identifyParcel(lat, lng);
     if (result) {
         // Start fresh single-lot selection
-        LotLoader.clearAllParcels();
+        LotLoader.clearSelectedParcel();
         LotLoader.addParcel(result.polygon, result.properties);
-        showParcelResult(result);
         setupLotFromSelection({ lat, lng });
     } else if (lotStatus) {
         lotStatus.textContent = 'Parcel overlay active';
@@ -129,13 +129,18 @@ function setupLotFromSelection(refPoint) {
         }
     }
 
-    // Show info box for multi-lot
-    if (LotLoader._selectedParcels.length > 1) {
-        const infoContent = document.getElementById('infoContent');
-        const infoBox = document.getElementById('infoBox');
+    // Show info box with parcel details
+    const infoContent = document.getElementById('infoContent');
+    const infoBox = document.getElementById('infoBox');
+    const parcels = LotLoader._selectedParcels;
+    if (parcels.length === 1) {
+        // Single lot — show full parcel info
+        showParcelResult(parcels[0]);
+    } else if (parcels.length > 1) {
+        // Multi-lot — show combined summary
         let html = '<table>';
-        html += `<tr><td>Lots</td><td>${LotLoader._selectedParcels.length}</td></tr>`;
-        for (const p of LotLoader._selectedParcels) {
+        html += `<tr><td>Lots</td><td>${parcels.length}</td></tr>`;
+        for (const p of parcels) {
             html += `<tr><td></td><td style="font-size:11px">${p.properties?.BESTADDRESS || '?'}</td></tr>`;
         }
         if (envelope) {
@@ -309,11 +314,10 @@ function setupUI() {
                 // Normal click = fresh single-lot selection
                 const lotStatus = document.getElementById('lotStatus');
                 lotStatus.textContent = 'Identifying...';
-                LotLoader.clearAllParcels();
+                LotLoader.clearSelectedParcel();
                 const result = await LotLoader.identifyParcel(lat, lng);
                 if (result) {
                     LotLoader.addParcel(result.polygon, result.properties);
-                    showParcelResult(result);
                     setupLotFromSelection({ lat, lng });
                 } else {
                     lotStatus.textContent = 'Parcel overlay active';
