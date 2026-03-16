@@ -38,6 +38,12 @@ const BuildingTool = {
     // Template system
     templates: [],         // Saved building templates [{name, footprint, config}]
 
+    // Lot context (persists across template swaps)
+    _lotPolygon: null,         // Raw parcel polygon [{lat, lng}, ...]
+    _lotGeometry: null,        // analyzeLotGeometry() result
+    _buildableEnvelope: null,  // computeBuildableEnvelope() result
+    _lotProperties: null,      // Parcel attributes (address, legal, etc.)
+
     // References
     _viewer: null,
     _handler: null,
@@ -1159,6 +1165,128 @@ const BuildingTool = {
             generationConfig: template.generationConfig ? JSON.parse(JSON.stringify(template.generationConfig)) : null
         };
         return true;
+    },
+
+    /**
+     * Store lot context (parcel polygon + analysis). Does NOT touch _points.
+     */
+    setLot(polygon, geometry, envelope, properties) {
+        this._lotPolygon = polygon;
+        this._lotGeometry = geometry;
+        this._buildableEnvelope = envelope;
+        this._lotProperties = properties || null;
+    },
+
+    clearLot() {
+        this._lotPolygon = null;
+        this._lotGeometry = null;
+        this._buildableEnvelope = null;
+        this._lotProperties = null;
+    },
+
+    /**
+     * Auto-place a template within the buildable envelope of the current lot.
+     * Returns true if placed, false if doesn't fit or no lot.
+     */
+    autoPlaceTemplate(templateName) {
+        if (!this._buildableEnvelope || this._buildableEnvelope.width <= 0) {
+            console.warn('No buildable envelope — cannot auto-place');
+            return { ok: false, reason: 'No lot selected' };
+        }
+
+        const template = this.templates.find(t => t.name === templateName);
+        if (!template) return { ok: false, reason: 'Template not found' };
+
+        // Also set clipboard for height/color/storeys
+        this.applyTemplate(templateName);
+
+        // Compute template dimensions from relativeFootprint
+        const D = 111000; // degrees to metres
+        const fp = template.relativeFootprint;
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const p of fp) {
+            const mx = p.dLng * D;
+            const my = p.dLat * D;
+            if (mx < minX) minX = mx; if (mx > maxX) maxX = mx;
+            if (my < minY) minY = my; if (my > maxY) maxY = my;
+        }
+        const tplW = maxX - minX;
+        const tplD = maxY - minY;
+
+        const envW = this._buildableEnvelope.width;
+        const envD = this._buildableEnvelope.depth;
+
+        // Try both orientations
+        let useRotated = false;
+        let fits = (tplW <= envW && tplD <= envD);
+        if (!fits) {
+            // Try rotated 90°
+            fits = (tplD <= envW && tplW <= envD);
+            if (fits) useRotated = true;
+        }
+
+        if (!fits) {
+            return {
+                ok: false,
+                reason: `Template ${templateName} (${tplW.toFixed(1)}m × ${tplD.toFixed(1)}m) too large for buildable area (${envW}m × ${envD}m)`
+            };
+        }
+
+        // Get envelope geometry for placement
+        const env = this._buildableEnvelope;
+        const lotAngle = env.angle;
+        const nrX = env._nrX, nrY = env._nrY;  // front-to-rear direction
+        const fdX = env._fdX, fdY = env._fdY;  // side direction
+
+        // Place center: front-biased (template front edge at front setback)
+        const placeLat = env.frontCenter.lat;
+        const placeLng = env.frontCenter.lng;
+
+        // Rotate template footprint to match lot orientation
+        // Template footprint is in dLat/dLng (Y=north, X=east)
+        // Lot has angle + front-to-rear direction
+        const refLat = env._refLat;
+        const mLat = env._mPerDegLat;
+        const mLng = env._mPerDegLng;
+
+        // Convert place point to local metres
+        const pcX = (placeLng - env._refLng) * mLng;
+        const pcY = (placeLat - refLat) * mLat;
+
+        // Build rotation: align template Y-axis with front-to-rear direction
+        // If rotated, swap template axes
+        const cosA = useRotated ? fdX : nrX;
+        const sinA = useRotated ? fdY : nrY;
+        const cosB = useRotated ? -nrX : fdX;
+        const sinB = useRotated ? -nrY : fdY;
+
+        // Transform each template vertex
+        this.cancel();
+        this._points = fp.map(p => {
+            const mx = p.dLng * D;  // template local X (metres)
+            const my = p.dLat * D;  // template local Y (metres)
+
+            // Rotate to lot orientation
+            const rx = mx * cosB + my * cosA;
+            const ry = mx * sinB + my * sinA;
+
+            // Translate to placement center
+            const wx = pcX + rx;
+            const wy = pcY + ry;
+
+            const lat = refLat + wy / mLat;
+            const lng = env._refLng + wx / mLng;
+            return {
+                lat, lng,
+                cartesian: Cesium.Cartesian3.fromDegrees(lng, lat)
+            };
+        });
+
+        this.mode = 'configuring';
+        this._updatePreview();
+        this._updateMeasurements();
+        this._fireUpdate();
+        return { ok: true, template: templateName };
     },
 
     _persistTemplates() {

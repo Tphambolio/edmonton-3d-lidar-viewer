@@ -14,6 +14,7 @@ const LotLoader = {
     _viewer: null,
     _imageryLayer: null,
     _selectedEntity: null,
+    _setbackEntities: [],
     _enabled: false,
     _lots: [],        // fallback only
     _entities: [],    // fallback only
@@ -139,11 +140,207 @@ const LotLoader = {
         });
     },
 
+    /**
+     * Analyze lot geometry: compute OBB, determine front/rear edges.
+     * @param {Array} polygon — [{lat, lng}, ...]
+     * @param {{lat, lng}} refPoint — search marker or click location (for front detection)
+     * @returns {{ center, width, depth, angle, frontMid, rearMid }}
+     */
+    analyzeLotGeometry(polygon, refPoint) {
+        if (!polygon || polygon.length < 3) return null;
+
+        const refLat = polygon[0].lat;
+        const refLng = polygon[0].lng;
+        const mPerDegLat = 111000;
+        const mPerDegLng = 111000 * Math.cos(refLat * Math.PI / 180);
+
+        const pts = polygon.map(c => ({
+            x: (c.lng - refLng) * mPerDegLng,
+            y: (c.lat - refLat) * mPerDegLat
+        }));
+
+        const obb = this._minAreaBoundingRect(pts);
+        if (!obb) return null;
+
+        const { center, halfW, halfH, angle } = obb;
+        const cos = Math.cos(angle), sin = Math.sin(angle);
+
+        // OBB edges: W axis and H axis. Short edge = frontage.
+        const isWshort = halfW <= halfH;
+        const halfFront = isWshort ? halfW : halfH;
+        const halfDepth = isWshort ? halfH : halfW;
+
+        // Midpoints of the two short (front/rear) edges
+        // Short axis direction: perpendicular to the long axis
+        let frontDirX, frontDirY, sideDirX, sideDirY;
+        if (isWshort) {
+            // W is short (frontage), H is long (depth)
+            frontDirX = cos; frontDirY = sin;     // along W axis
+            sideDirX = -sin; sideDirY = cos;      // along H axis
+        } else {
+            // H is short (frontage), W is long (depth)
+            frontDirX = -sin; frontDirY = cos;    // along H axis
+            sideDirX = cos; sideDirY = sin;       // along W axis
+        }
+
+        // Two candidate front-edge midpoints (at +depth and -depth along depth axis)
+        const mid1 = { x: center.x + sideDirX * halfDepth, y: center.y + sideDirY * halfDepth };
+        const mid2 = { x: center.x - sideDirX * halfDepth, y: center.y - sideDirY * halfDepth };
+
+        // Pick the one closest to refPoint
+        let frontMid, rearMid;
+        if (refPoint) {
+            const rpx = (refPoint.lng - refLng) * mPerDegLng;
+            const rpy = (refPoint.lat - refLat) * mPerDegLat;
+            const d1 = (mid1.x - rpx) ** 2 + (mid1.y - rpy) ** 2;
+            const d2 = (mid2.x - rpx) ** 2 + (mid2.y - rpy) ** 2;
+            frontMid = d1 < d2 ? mid1 : mid2;
+            rearMid = d1 < d2 ? mid2 : mid1;
+        } else {
+            // Fallback: southernmost = front
+            frontMid = mid1.y < mid2.y ? mid1 : mid2;
+            rearMid = mid1.y < mid2.y ? mid2 : mid1;
+        }
+
+        return {
+            center: {
+                lat: refLat + center.y / mPerDegLat,
+                lng: refLng + center.x / mPerDegLng
+            },
+            width: halfFront * 2,   // frontage width (metres)
+            depth: halfDepth * 2,   // lot depth (metres)
+            angle,                  // OBB rotation (radians)
+            frontMid: {
+                lat: refLat + frontMid.y / mPerDegLat,
+                lng: refLng + frontMid.x / mPerDegLng
+            },
+            rearMid: {
+                lat: refLat + rearMid.y / mPerDegLat,
+                lng: refLng + rearMid.x / mPerDegLng
+            },
+            // Internal: directions in metres for envelope computation
+            _refLat: refLat, _refLng: refLng,
+            _mPerDegLat: mPerDegLat, _mPerDegLng: mPerDegLng,
+            _center: center, _halfFront: halfFront, _halfDepth: halfDepth,
+            _frontDir: { x: frontDirX, y: frontDirY },
+            _sideDir: { x: sideDirX, y: sideDirY },
+            _frontMid: frontMid, _rearMid: rearMid
+        };
+    },
+
+    /**
+     * Compute the buildable envelope by insetting the OBB by setback distances.
+     * @param {Object} lotGeom — result of analyzeLotGeometry()
+     * @returns {{ polygon, width, depth, center, angle }}
+     */
+    computeBuildableEnvelope(lotGeom) {
+        if (!lotGeom) return null;
+
+        const { _center: c, _halfFront: halfF, _halfDepth: halfD,
+                _frontDir: fd, _sideDir: sd,
+                _frontMid: fm, _rearMid: rm,
+                _refLat: refLat, _refLng: refLng,
+                _mPerDegLat: mLat, _mPerDegLng: mLng, angle } = lotGeom;
+
+        // Direction from front to rear (into lot)
+        const toRearX = rm.x - fm.x, toRearY = rm.y - fm.y;
+        const toRearLen = Math.sqrt(toRearX * toRearX + toRearY * toRearY);
+        const nrX = toRearX / toRearLen, nrY = toRearY / toRearLen;
+
+        // Buildable center: shift from lot center toward front
+        // Front setback from front edge, rear setback from rear edge
+        const buildableDepth = toRearLen - this.FRONT_SETBACK - this.REAR_SETBACK;
+        const buildableWidth = halfF * 2 - this.SIDE_SETBACK * 2;
+
+        if (buildableDepth <= 0 || buildableWidth <= 0) {
+            return { polygon: [], width: 0, depth: 0, center: lotGeom.center, angle };
+        }
+
+        // Center of buildable area: start at front mid, go in by front setback + half buildable depth
+        const bcX = fm.x + nrX * (this.FRONT_SETBACK + buildableDepth / 2);
+        const bcY = fm.y + nrY * (this.FRONT_SETBACK + buildableDepth / 2);
+
+        // 4 corners of buildable rectangle
+        const halfBW = buildableWidth / 2;
+        const halfBD = buildableDepth / 2;
+        const corners = [
+            { x: bcX + fd.x * halfBW + nrX * halfBD, y: bcY + fd.y * halfBW + nrY * halfBD },
+            { x: bcX - fd.x * halfBW + nrX * halfBD, y: bcY - fd.y * halfBW + nrY * halfBD },
+            { x: bcX - fd.x * halfBW - nrX * halfBD, y: bcY - fd.y * halfBW - nrY * halfBD },
+            { x: bcX + fd.x * halfBW - nrX * halfBD, y: bcY + fd.y * halfBW - nrY * halfBD },
+        ];
+
+        const polygon = corners.map(p => ({
+            lat: refLat + p.y / mLat,
+            lng: refLng + p.x / mLng
+        }));
+
+        // Front-biased center: shift toward front setback line
+        const frontBiasX = fm.x + nrX * (this.FRONT_SETBACK + buildableDepth * 0.35);
+        const frontBiasY = fm.y + nrY * (this.FRONT_SETBACK + buildableDepth * 0.35);
+
+        return {
+            polygon,
+            width: Math.round(buildableWidth * 10) / 10,
+            depth: Math.round(buildableDepth * 10) / 10,
+            center: {
+                lat: refLat + bcY / mLat,
+                lng: refLng + bcX / mLng
+            },
+            // Front-biased placement point (house sits forward on lot)
+            frontCenter: {
+                lat: refLat + frontBiasY / mLat,
+                lng: refLng + frontBiasX / mLng
+            },
+            angle,
+            _nrX: nrX, _nrY: nrY,
+            _fdX: fd.x, _fdY: fd.y,
+            _refLat: refLat, _refLng: refLng,
+            _mPerDegLat: mLat, _mPerDegLng: mLng
+        };
+    },
+
+    /**
+     * Show setback lines (buildable envelope) as a green outline on the map.
+     */
+    showSetbackLines(envelope) {
+        this.clearSetbackLines();
+        if (!envelope || !envelope.polygon || envelope.polygon.length < 3) return;
+
+        const positions = [];
+        for (const p of envelope.polygon) {
+            positions.push(p.lng, p.lat);
+        }
+
+        const groundH = (Buildings?._terrainHeight || 0) + 0.4;
+        const entity = this._viewer.entities.add({
+            name: 'setback_envelope',
+            polygon: {
+                hierarchy: Cesium.Cartesian3.fromDegreesArray(positions),
+                height: groundH,
+                material: Cesium.Color.LIME.withAlpha(0.08),
+                outline: true,
+                outlineColor: Cesium.Color.LIME.withAlpha(0.6),
+                outlineWidth: 2,
+                heightReference: Cesium.HeightReference.NONE
+            }
+        });
+        this._setbackEntities.push(entity);
+    },
+
+    clearSetbackLines() {
+        for (const e of this._setbackEntities) {
+            this._viewer.entities.remove(e);
+        }
+        this._setbackEntities = [];
+    },
+
     clearSelectedParcel() {
         if (this._selectedEntity) {
             this._viewer.entities.remove(this._selectedEntity);
             this._selectedEntity = null;
         }
+        this.clearSetbackLines();
     },
 
     // Legacy API compatibility

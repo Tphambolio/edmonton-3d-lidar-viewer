@@ -58,17 +58,33 @@ async function autoIdentifyParcel(lat, lng) {
     console.log('Auto-identify result:', result ? result.properties?.BESTADDRESS : 'null');
     if (result) {
         showParcelResult(result);
-        // Feed parcel polygon into BuildingTool for immediate use
-        BuildingTool.cancel();
-        BuildingTool._points = result.polygon.map(p => ({
-            lat: p.lat, lng: p.lng,
-            cartesian: Cesium.Cartesian3.fromDegrees(p.lng, p.lat)
-        }));
-        BuildingTool.mode = 'configuring';
-        BuildingTool._fireUpdate();
+        setupLotForBuilding(result.polygon, result.properties, { lat, lng });
     } else if (lotStatus) {
         lotStatus.textContent = 'Parcel overlay active';
     }
+}
+
+/**
+ * Analyze lot geometry, compute setbacks, and store on BuildingTool.
+ * Does NOT place a building — waits for template click.
+ */
+function setupLotForBuilding(polygon, properties, refPoint) {
+    const geom = LotLoader.analyzeLotGeometry(polygon, refPoint);
+    const envelope = geom ? LotLoader.computeBuildableEnvelope(geom) : null;
+
+    BuildingTool.cancel();
+    BuildingTool.setLot(polygon, geom, envelope, properties);
+
+    if (envelope && envelope.polygon.length >= 3) {
+        LotLoader.showSetbackLines(envelope);
+        const lotStatus = document.getElementById('lotStatus');
+        if (lotStatus) {
+            const addr = properties?.BESTADDRESS || 'Selected';
+            lotStatus.textContent = `${addr} — ${envelope.width}m × ${envelope.depth}m buildable`;
+        }
+    }
+
+    BuildingTool._fireUpdate();
 }
 
 async function init() {
@@ -228,15 +244,7 @@ function setupUI() {
             const result = await LotLoader.identifyParcel(lat, lng);
             if (result) {
                 showParcelResult(result);
-                // Feed parcel polygon into BuildingTool
-                BuildingTool.cancel();
-                BuildingTool._points = result.polygon.map(p => ({
-                    lat: p.lat, lng: p.lng,
-                    cartesian: Cesium.Cartesian3.fromDegrees(p.lng, p.lat)
-                }));
-                BuildingTool.mode = 'configuring';
-                BuildingTool._fireUpdate();
-                setStatus(`Lot: ${result.properties.BESTADDRESS || 'Selected'}`);
+                setupLotForBuilding(result.polygon, result.properties, { lat, lng });
             } else {
                 lotStatus.textContent = 'Parcel overlay active';
             }
@@ -1589,26 +1597,43 @@ function renderTemplateList() {
         </span>
     `).join('');
 
-    // Click template chip → enter paste mode with that template
+    // Click template chip → auto-place on lot if selected, else enter paste mode
     list.querySelectorAll('.template-chip').forEach(chip => {
         chip.addEventListener('click', (e) => {
             // Ignore if clicking delete button
             if (e.target.classList.contains('chip-delete')) return;
 
             const name = chip.dataset.template;
+            const template = BuildingTool.templates.find(t => t.name === name);
+
+            // Apply template config to UI sliders
+            if (template && template.height) {
+                document.getElementById('buildHeightSlider').value = template.height;
+                document.getElementById('heightValue').textContent = template.height + 'm';
+            }
+            if (template && template.storeys) {
+                document.querySelectorAll('.storey-btn').forEach(b => b.classList.remove('active'));
+                const storeyBtn = document.querySelector(`.storey-btn[data-storeys="${Math.min(template.storeys, 6)}"]`);
+                if (storeyBtn) storeyBtn.classList.add('active');
+            }
+            if (template && template.color) {
+                document.getElementById('buildColorPicker').value = template.color;
+            }
+
+            // If a lot is selected, auto-place the template within setbacks
+            if (BuildingTool._lotPolygon) {
+                const result = BuildingTool.autoPlaceTemplate(name);
+                if (result.ok) {
+                    setStatus(`Placed ${name} on lot`);
+                } else {
+                    setStatus(result.reason);
+                }
+                return;
+            }
+
+            // No lot — fallback to manual paste mode
             if (BuildingTool.applyTemplate(name)) {
                 document.getElementById('pasteBtn').disabled = false;
-
-                const template = BuildingTool.templates.find(t => t.name === name);
-                // Apply template config to UI sliders
-                if (template && template.height) {
-                    document.getElementById('buildHeightSlider').value = template.height;
-                    document.getElementById('heightValue').textContent = template.height + 'm';
-                }
-                if (template && template.color) {
-                    document.getElementById('buildColorPicker').value = template.color;
-                }
-
                 if (BuildingTool.mode === 'idle') {
                     startPasteMode();
                 }
