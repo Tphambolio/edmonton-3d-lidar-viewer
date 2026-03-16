@@ -6,7 +6,7 @@
  * Each tileset covers one 512m VegLiDAR tile.
  */
 const Trees = {
-    TILE_BASE: new URLSearchParams(window.location.search).get('tileBase') || 'data/tree_tiles/',
+    TILE_BASE: new URLSearchParams(window.location.search).get('tileBase') || 'https://pub-e37d9167d0644b6fb71d37ada161e611.r2.dev/',
     tileIndex: null,
     loadedTiles: new Set(),
     tilesets: [],
