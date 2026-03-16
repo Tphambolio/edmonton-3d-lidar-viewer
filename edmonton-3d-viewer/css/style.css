@@ -525,6 +525,14 @@ html, body, #cesiumContainer { width: 100%; height: 100%; overflow: hidden; }
     border-top: 1px solid rgba(255,255,255,0.08);
     padding-top: 6px;
 }
+.custom-building-header {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #888;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
 .custom-building-item {
     display: flex;
     align-items: center;
@@ -544,14 +552,16 @@ html, body, #cesiumContainer { width: 100%; height: 100%; overflow: hidden; }
 }
 .custom-building-item .item-info { flex: 1; }
 .custom-building-item .delete-btn {
-    background: none;
-    border: none;
-    color: #888;
+    background: rgba(231,76,60,0.15);
+    border: 1px solid rgba(231,76,60,0.3);
+    border-radius: 3px;
+    color: #e74c3c;
     cursor: pointer;
-    font-size: 14px;
-    padding: 0 4px;
+    font-size: 10px;
+    padding: 2px 6px;
+    font-weight: 600;
 }
-.custom-building-item .delete-btn:hover { color: #e55; }
+.custom-building-item .delete-btn:hover { background: rgba(231,76,60,0.3); color: #fff; }
 
 /* Advanced Config Toggle */
 .advanced-toggle {

@@ -485,22 +485,31 @@ function selectBuilding(entity) {
         const type = props?.type?.getValue() || '?';
         const height = props?.height?.getValue() || '?';
         const area = props?.area_m2?.getValue() || 0;
+        const isCustom = props?.customBuilding?.getValue() === true;
 
         // Show selected building bar in the building tool panel
         selectedDiv.classList.remove('hidden');
-        selectedDiv.innerHTML = `#${id} &middot; ${type} &middot; ${height}m &middot; ${area.toFixed ? area.toFixed(0) : area}m&sup2; <span class="demolish-link" onclick="demolishBuilding(Buildings.selectedEntity)">Demolish</span>`;
+        if (isCustom) {
+            selectedDiv.innerHTML = `Custom &middot; ${height}m &middot; ${area.toFixed ? area.toFixed(0) : area}m&sup2; <span class="demolish-link" style="color:#e74c3c" onclick="deleteSelectedCustomBuilding()">Delete</span>`;
+            selectedCustomBuilding = BuildingTool.buildings.find(b => b.id === id) || null;
+        } else {
+            selectedDiv.innerHTML = `#${id} &middot; ${type} &middot; ${height}m &middot; ${area.toFixed ? area.toFixed(0) : area}m&sup2; <span class="demolish-link" onclick="demolishBuilding(Buildings.selectedEntity)">Demolish</span>`;
+        }
 
         rotateModelBtn.disabled = !Buildings.customModels[id];
 
         // Show info box
+        const actionBtn = isCustom
+            ? `<button onclick="deleteSelectedCustomBuilding()" style="margin-top:8px;padding:6px 12px;border:none;border-radius:4px;background:#e74c3c;color:white;cursor:pointer;font-size:12px;width:100%;font-weight:600;">Delete Building</button>`
+            : `<button onclick="demolishBuilding(Buildings.selectedEntity)" style="margin-top:8px;padding:6px 12px;border:none;border-radius:4px;background:#c0392b;color:white;cursor:pointer;font-size:12px;width:100%;font-weight:600;">Demolish</button>`;
         document.getElementById('infoContent').innerHTML = `
             <table>
-                <tr><td>ID</td><td>${id}</td></tr>
-                <tr><td>Type</td><td>${type}</td></tr>
+                <tr><td>${isCustom ? 'Type' : 'ID'}</td><td>${isCustom ? 'Custom' : id}</td></tr>
+                ${!isCustom ? `<tr><td>Type</td><td>${type}</td></tr>` : ''}
                 <tr><td>Height</td><td>${height}m</td></tr>
                 <tr><td>Area</td><td>${area.toFixed ? area.toFixed(0) : area} m&sup2;</td></tr>
             </table>
-            <button onclick="demolishBuilding(Buildings.selectedEntity)" style="margin-top:8px;padding:6px 12px;border:none;border-radius:4px;background:#c0392b;color:white;cursor:pointer;font-size:12px;width:100%;font-weight:600;">Demolish</button>`;
+            ${actionBtn}`;
         infoBox.classList.remove('hidden');
 
         // Extract footprint from the SODA building polygon and populate building tool
@@ -1939,9 +1948,12 @@ function saveSelectedAsTemplate() {
 
 function deleteSelectedCustomBuilding() {
     if (!selectedCustomBuilding) return;
-    BuildingTool.deleteBuilding(selectedCustomBuilding.id);
+    const id = selectedCustomBuilding.id;
+    BuildingTool.deleteBuilding(id);
     selectedCustomBuilding = null;
     document.getElementById('infoBox').classList.add('hidden');
+    document.getElementById('selectedBuilding').classList.add('hidden');
+    setStatus(`Deleted custom building`);
     updateBuildingList();
     updateStats();
 }
@@ -1960,7 +1972,7 @@ function updateBuildingList() {
         <div class="custom-building-item" onclick="flyToCustomBuilding('${b.id}')">
             <div class="color-swatch" style="background:${b.color}"></div>
             <span class="item-info">${b.width}m × ${b.depth}m × ${b.height}m</span>
-            <button class="delete-btn" onclick="event.stopPropagation(); BuildingTool.deleteBuilding('${b.id}'); updateBuildingList(); updateStats();">&times;</button>
+            <button class="delete-btn" onclick="event.stopPropagation(); BuildingTool.deleteBuilding('${b.id}'); updateBuildingList(); updateStats(); setStatus('Deleted custom building');" title="Delete this building">Delete</button>
         </div>
     `).join('');
 }
