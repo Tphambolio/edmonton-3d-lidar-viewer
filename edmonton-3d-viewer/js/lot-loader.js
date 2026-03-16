@@ -7,7 +7,7 @@
  * Fallback: approximate lot boundaries from building footprints.
  */
 const LotLoader = {
-    MAPSERVER_URL: 'https://gis.edmonton.ca/site1/rest/services/Overlay_Public/Common_Layers/MapServer',
+    MAPSERVER_URL: 'https://edmonton-mapserver-proxy.travisjohnkennedy.workers.dev/mapserver',
     LAYER_ID: '287', // Title Lots
 
     // State
