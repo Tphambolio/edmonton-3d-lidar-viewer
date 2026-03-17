@@ -14,7 +14,7 @@
     </script>
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=8">
+    <link rel="stylesheet" href="css/style.css?v=9">
 </head>
 <body>
     <div id="cesiumContainer"></div>
@@ -38,6 +38,9 @@
             </label>
             <label>
                 <input type="checkbox" id="showSatellite"> Satellite
+            </label>
+            <label>
+                <input type="checkbox" id="showTreePoints"> Tree Inventory
             </label>
             <label>
                 Radius: <input type="range" id="radiusSlider" min="100" max="500" value="200" step="50">
@@ -290,12 +293,13 @@
         <div id="infoContent"></div>
     </div>
 
-    <script src="js/geocoder.js?v=8"></script>
-    <script src="js/buildings.js?v=8"></script>
-    <script src="js/building-tool.js?v=8"></script>
-    <script src="js/lot-loader.js?v=8"></script>
-    <script src="js/trees.js?v=8"></script>
-    <script src="js/app.js?v=8"></script>
-    <script type="module" src="js/building-generator.js?v=8"></script>
+    <script src="js/geocoder.js?v=9"></script>
+    <script src="js/buildings.js?v=9"></script>
+    <script src="js/building-tool.js?v=9"></script>
+    <script src="js/lot-loader.js?v=9"></script>
+    <script src="js/trees.js?v=9"></script>
+    <script src="js/tree-points.js?v=9"></script>
+    <script src="js/app.js?v=9"></script>
+    <script type="module" src="js/building-generator.js?v=9"></script>
 </body>
 </html>

@@ -25,6 +25,27 @@ const CONVERTIBLE_FORMATS = ['.obj', '.fbx', '.dae', '.3ds', '.stl', '.ply', '.u
 const SKP_FORMAT = '.skp';
 
 /**
+ * Display tree inventory point info in the info box.
+ */
+function showTreePointInfo(info) {
+    const infoContent = document.getElementById('infoContent');
+    const infoBox = document.getElementById('infoBox');
+    const colorHex = TreePoints.GENUS_COLORS[info.genus] || TreePoints.DEFAULT_COLOR;
+
+    let html = `<h3 style="margin:0 0 6px">${info.species_common}</h3>`;
+    html += '<table class="parcel-info">';
+    if (info.species_botanical) html += `<tr><td>Botanical</td><td><em>${info.species_botanical}</em></td></tr>`;
+    if (info.genus) html += `<tr><td>Genus</td><td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${colorHex};margin-right:4px"></span>${info.genus}</td></tr>`;
+    if (info.dbh && info.dbh !== '?') html += `<tr><td>DBH</td><td>${info.dbh} cm</td></tr>`;
+    if (info.condition) html += `<tr><td>Condition</td><td>${info.condition}%</td></tr>`;
+    if (info.location_type) html += `<tr><td>Location</td><td>${info.location_type}</td></tr>`;
+    html += '</table>';
+
+    infoContent.innerHTML = html;
+    infoBox.classList.remove('hidden');
+}
+
+/**
  * Display parcel identify result in the info box and lot status.
  * Shared by click handler and auto-identify on search.
  */
@@ -212,6 +233,7 @@ async function init() {
     // Initialize custom building tool
     BuildingTool.init(viewer);
     LotLoader.init(viewer);
+    TreePoints.init(viewer);
 
     // Wire up UI
     setupUI();
@@ -246,6 +268,13 @@ function setupUI() {
     showSatellite.addEventListener('change', () => {
         osmLayer.show = !showSatellite.checked;
         satelliteLayer.show = showSatellite.checked;
+    });
+    const showTreePoints = document.getElementById('showTreePoints');
+    showTreePoints.addEventListener('change', () => {
+        TreePoints.setVisible(showTreePoints.checked);
+        if (showTreePoints.checked && currentLocation && !TreePoints._loaded) {
+            TreePoints.loadAround(currentLocation.lat, currentLocation.lng, parseInt(radiusSlider.value));
+        }
     });
 
     // Tree height offset slider
@@ -283,6 +312,15 @@ function setupUI() {
             // Custom building pick
             else if (picked.id && picked.id.name?.startsWith('custom_build_')) {
                 selectCustomBuilding(picked.id);
+            }
+            // Tree inventory point pick
+            else if (picked.id && picked.id.name?.startsWith('tree_')) {
+                const info = TreePoints.getTreeInfo(picked.id);
+                if (info) {
+                    selectBuilding(null);
+                    selectCustomBuilding(null);
+                    showTreePointInfo(info);
+                }
             }
             // 3D Tileset pick (trees) — ignore, don't deselect
             else if (picked instanceof Cesium.Cesium3DTileFeature) {
@@ -533,6 +571,12 @@ async function loadScene(lat, lng, radiusM) {
     const treeCount = await Trees.loadAround(viewer, lat, lng, radiusM);
     if (treeCount > 0) {
         setStatus(`Loaded ${bldgCount} buildings, ${treeCount} tree tiles`);
+    }
+
+    // Load tree inventory points (species dots)
+    const tpCount = await TreePoints.loadAround(lat, lng, radiusM);
+    if (tpCount > 0) {
+        setStatus(`Loaded ${bldgCount} buildings, ${treeCount} tree tiles, ${tpCount} tree points`);
     }
 
     // Auto-enable lot overlay and identify the searched parcel
@@ -2068,10 +2112,12 @@ function setStatus(msg) {
 function updateStats() {
     const stats = document.getElementById('stats');
     const demolished = demolishedBuildings.length;
+    const tpCount = TreePoints._treeData?.length || 0;
     stats.textContent = `Buildings: ${Buildings.entities.length} | ` +
-        `Tree tilesets: ${Trees.loadedTiles.size} | ` +
-        `Custom models: ${Object.keys(Buildings.customModels).length} | ` +
-        `Custom buildings: ${BuildingTool.buildings.length}` +
+        `Tree tilesets: ${Trees.loadedTiles.size}` +
+        (tpCount ? ` | Tree inventory: ${tpCount}` : '') +
+        ` | Custom models: ${Object.keys(Buildings.customModels).length}` +
+        ` | Custom buildings: ${BuildingTool.buildings.length}` +
         (demolished ? ` | Demolished: ${demolished}` : '');
 }
 
