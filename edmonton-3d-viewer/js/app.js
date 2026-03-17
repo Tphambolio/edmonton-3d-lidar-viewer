@@ -32,13 +32,20 @@ function showTreePointInfo(info) {
     const infoBox = document.getElementById('infoBox');
     const colorHex = TreePoints.GENUS_COLORS[info.genus] || TreePoints.DEFAULT_COLOR;
 
-    let html = `<h3 style="margin:0 0 6px">${info.species}</h3>`;
+    let html = `<h3 style="margin:0 0 6px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${colorHex};margin-right:6px"></span>${info.species}</h3>`;
     html += '<table class="parcel-info">';
     if (info.species_botanical) html += `<tr><td>Botanical</td><td><em>${info.species_botanical}</em></td></tr>`;
-    if (info.genus) html += `<tr><td>Genus</td><td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${colorHex};margin-right:4px"></span>${info.genus}</td></tr>`;
+    if (info.genus) html += `<tr><td>Genus</td><td>${info.genus}</td></tr>`;
     if (info.dbh && info.dbh !== '?') html += `<tr><td>DBH</td><td>${info.dbh} cm</td></tr>`;
     if (info.condition) html += `<tr><td>Condition</td><td>${info.condition}%</td></tr>`;
+    if (info.planted_date) {
+        const year = info.planted_date.substring(0, 4);
+        html += `<tr><td>Planted</td><td>${year}</td></tr>`;
+    }
     if (info.location_type) html += `<tr><td>Location</td><td>${info.location_type}</td></tr>`;
+    if (info.neighbourhood) html += `<tr><td>Neighbourhood</td><td>${info.neighbourhood}</td></tr>`;
+    if (info.owner) html += `<tr><td>Owner</td><td>${info.owner}</td></tr>`;
+    if (info.edible_fruit === 'Y') html += `<tr><td>Edible Fruit</td><td>Yes</td></tr>`;
     html += '</table>';
 
     infoContent.innerHTML = html;
@@ -304,6 +311,7 @@ function setupUI() {
 
         const picked = viewer.scene.pick(click.position);
         console.log('Picked:', picked);
+        let treePointClicked = false;
         if (Cesium.defined(picked)) {
             // Entity pick (buildings)
             if (picked.id && picked.id.name?.startsWith('bldg_')) {
@@ -320,6 +328,7 @@ function setupUI() {
                     selectBuilding(null);
                     selectCustomBuilding(null);
                     showTreePointInfo(info);
+                    treePointClicked = true;
                 }
             }
             // 3D Tileset pick (trees) — ignore, don't deselect
@@ -334,6 +343,9 @@ function setupUI() {
             selectBuilding(null);
             selectCustomBuilding(null);
         }
+
+        // Skip parcel identify if a tree point was clicked
+        if (treePointClicked) return;
 
         // Also identify parcel if lot boundaries are enabled
         const lotsCheckbox = document.getElementById('showLotsCheckbox');

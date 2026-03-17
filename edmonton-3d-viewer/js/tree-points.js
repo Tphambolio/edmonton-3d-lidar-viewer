@@ -62,7 +62,7 @@ const TreePoints = {
         try {
             // Socrata within_circle on geometry_point field
             const where = `within_circle(geometry_point, ${lat}, ${lng}, ${radiusM})`;
-            const fields = 'latitude,longitude,species,species_botanical,genus,diameter_breast_height,condition_percent,location_type,neighbourhood_name';
+            const fields = 'latitude,longitude,species,species_botanical,genus,diameter_breast_height,condition_percent,planted_date,location_type,neighbourhood_name,owner,bears_edible_fruit';
             const url = `${this.API_BASE}?$where=${encodeURIComponent(where)}&$select=${fields}&$limit=5000`;
 
             const resp = await fetch(url);
@@ -127,7 +127,11 @@ const TreePoints = {
                     genus: genus,
                     dbh: dbh,
                     condition: tree.condition_percent || '',
-                    location_type: tree.location_type || ''
+                    planted_date: tree.planted_date || '',
+                    location_type: tree.location_type || '',
+                    neighbourhood: tree.neighbourhood_name || '',
+                    owner: tree.owner || '',
+                    edible_fruit: tree.bears_edible_fruit || ''
                 }
             });
 
@@ -161,7 +165,11 @@ const TreePoints = {
                 genus: props.genus?.getValue() || '',
                 dbh: props.dbh?.getValue() || '?',
                 condition: props.condition?.getValue() || '',
-                location_type: props.location_type?.getValue() || ''
+                planted_date: props.planted_date?.getValue() || '',
+                location_type: props.location_type?.getValue() || '',
+                neighbourhood: props.neighbourhood?.getValue() || '',
+                owner: props.owner?.getValue() || '',
+                edible_fruit: props.edible_fruit?.getValue() || ''
             };
         } catch {
             return null;
