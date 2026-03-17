@@ -94,7 +94,7 @@ const TreePoints = {
         if (!this._treeData.length) return;
 
         const viewer = this._viewer;
-        const groundH = (Buildings?._terrainHeight || 0) + 1.5;
+        const groundH = 1.5;  // small offset above ground (heightReference is RELATIVE_TO_GROUND)
 
         for (const tree of this._treeData) {
             const lat = parseFloat(tree.latitude);
@@ -112,7 +112,7 @@ const TreePoints = {
                 name: `tree_${species}`,
                 position: Cesium.Cartesian3.fromDegrees(lng, lat, groundH),
                 point: {
-                    pixelSize: 6,
+                    pixelSize: 8,
                     color: color,
                     outlineColor: Cesium.Color.WHITE.withAlpha(0.7),
                     outlineWidth: 1,
