@@ -60,9 +60,9 @@ const TreePoints = {
         this._lastCenter = { lat, lng };
 
         try {
-            // Socrata within_circle: within_circle(location, lat, lng, radius_m)
-            const where = `within_circle(location, ${lat}, ${lng}, ${radiusM})`;
-            const fields = 'latitude,longitude,species_common,species_botanical,genus,diameter_breast_height,condition_percent,location_type';
+            // Socrata within_circle on geometry_point field
+            const where = `within_circle(geometry_point, ${lat}, ${lng}, ${radiusM})`;
+            const fields = 'latitude,longitude,species,species_botanical,genus,diameter_breast_height,condition_percent,location_type,neighbourhood_name';
             const url = `${this.API_BASE}?$where=${encodeURIComponent(where)}&$select=${fields}&$limit=5000`;
 
             const resp = await fetch(url);
@@ -105,7 +105,7 @@ const TreePoints = {
             const colorHex = this.GENUS_COLORS[genus] || this.DEFAULT_COLOR;
             const color = Cesium.Color.fromCssColorString(colorHex);
 
-            const species = tree.species_common || tree.species_botanical || 'Unknown';
+            const species = tree.species || tree.species_botanical || 'Unknown';
             const dbh = tree.diameter_breast_height || '?';
 
             const entity = viewer.entities.add({
@@ -122,7 +122,7 @@ const TreePoints = {
                 },
                 properties: {
                     isTreePoint: true,
-                    species_common: species,
+                    species: species,
                     species_botanical: tree.species_botanical || '',
                     genus: genus,
                     dbh: dbh,
@@ -156,7 +156,7 @@ const TreePoints = {
             const props = entity.properties;
             if (!props?.isTreePoint?.getValue()) return null;
             return {
-                species_common: props.species_common?.getValue() || 'Unknown',
+                species: props.species?.getValue() || 'Unknown',
                 species_botanical: props.species_botanical?.getValue() || '',
                 genus: props.genus?.getValue() || '',
                 dbh: props.dbh?.getValue() || '?',

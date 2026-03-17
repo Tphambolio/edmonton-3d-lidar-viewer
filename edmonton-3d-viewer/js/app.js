@@ -32,7 +32,7 @@ function showTreePointInfo(info) {
     const infoBox = document.getElementById('infoBox');
     const colorHex = TreePoints.GENUS_COLORS[info.genus] || TreePoints.DEFAULT_COLOR;
 
-    let html = `<h3 style="margin:0 0 6px">${info.species_common}</h3>`;
+    let html = `<h3 style="margin:0 0 6px">${info.species}</h3>`;
     html += '<table class="parcel-info">';
     if (info.species_botanical) html += `<tr><td>Botanical</td><td><em>${info.species_botanical}</em></td></tr>`;
     if (info.genus) html += `<tr><td>Genus</td><td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${colorHex};margin-right:4px"></span>${info.genus}</td></tr>`;
