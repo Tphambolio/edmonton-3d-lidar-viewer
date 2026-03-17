@@ -309,39 +309,48 @@ function setupUI() {
         // Don't intercept clicks when BuildingTool is drawing
         if (BuildingTool.mode === 'drawing') return;
 
-        const picked = viewer.scene.pick(click.position);
-        console.log('Picked:', picked);
+        // Use drillPick to detect entities behind terrain/tilesets
+        const allPicked = viewer.scene.drillPick(click.position, 5);
+        const picked = allPicked.length > 0 ? allPicked[0] : undefined;
+        console.log('Picked:', allPicked.length, 'items', picked);
+
+        // Check all picks for tree points (they may be behind terrain in pick order)
         let treePointClicked = false;
-        if (Cesium.defined(picked)) {
-            // Entity pick (buildings)
-            if (picked.id && picked.id.name?.startsWith('bldg_')) {
-                selectBuilding(picked.id);
-            }
-            // Custom building pick
-            else if (picked.id && picked.id.name?.startsWith('custom_build_')) {
-                selectCustomBuilding(picked.id);
-            }
-            // Tree inventory point pick
-            else if (picked.id && picked.id.name?.startsWith('tree_')) {
-                const info = TreePoints.getTreeInfo(picked.id);
+        for (const p of allPicked) {
+            if (p.id && p.id.name?.startsWith('tree_')) {
+                const info = TreePoints.getTreeInfo(p.id);
                 if (info) {
                     selectBuilding(null);
                     selectCustomBuilding(null);
                     showTreePointInfo(info);
                     treePointClicked = true;
+                    break;
                 }
             }
-            // 3D Tileset pick (trees) — ignore, don't deselect
-            else if (picked instanceof Cesium.Cesium3DTileFeature) {
-                console.log('Clicked tree tileset — ignoring');
-            }
-            else {
+        }
+
+        if (!treePointClicked) {
+            if (Cesium.defined(picked)) {
+                // Entity pick (buildings)
+                if (picked.id && picked.id.name?.startsWith('bldg_')) {
+                    selectBuilding(picked.id);
+                }
+                // Custom building pick
+                else if (picked.id && picked.id.name?.startsWith('custom_build_')) {
+                    selectCustomBuilding(picked.id);
+                }
+                // 3D Tileset pick (trees) — ignore, don't deselect
+                else if (picked instanceof Cesium.Cesium3DTileFeature) {
+                    console.log('Clicked tree tileset — ignoring');
+                }
+                else {
+                    selectBuilding(null);
+                    selectCustomBuilding(null);
+                }
+            } else {
                 selectBuilding(null);
                 selectCustomBuilding(null);
             }
-        } else {
-            selectBuilding(null);
-            selectCustomBuilding(null);
         }
 
         // Skip parcel identify if a tree point was clicked
