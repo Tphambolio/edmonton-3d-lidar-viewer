@@ -174,6 +174,32 @@ const TreePoints = {
         }
     },
 
+    /**
+     * Find the nearest tree point entity to a screen click position.
+     * Returns entity if within pixelRadius, null otherwise.
+     */
+    findNearestAt(screenPosition, pixelRadius = 12) {
+        if (!this._visible || !this._entities.length) return null;
+        const now = Cesium.JulianDate.now();
+        let best = null;
+        let bestDist = pixelRadius * pixelRadius;
+        for (const entity of this._entities) {
+            if (!entity.show) continue;
+            const pos = entity.position.getValue(now);
+            if (!pos) continue;
+            const sp = Cesium.SceneTransforms.wgs84ToWindowCoordinates(this._viewer.scene, pos);
+            if (!sp) continue;
+            const dx = sp.x - screenPosition.x;
+            const dy = sp.y - screenPosition.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < bestDist) {
+                bestDist = d2;
+                best = entity;
+            }
+        }
+        return best;
+    },
+
     _clearEntities() {
         for (const e of this._entities) {
             this._viewer.entities.remove(e);
