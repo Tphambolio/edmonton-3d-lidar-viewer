@@ -94,8 +94,6 @@ const TreePoints = {
         if (!this._treeData.length) return;
 
         const viewer = this._viewer;
-        const groundH = 1.5;  // small offset above ground (heightReference is RELATIVE_TO_GROUND)
-
         for (const tree of this._treeData) {
             const lat = parseFloat(tree.latitude);
             const lng = parseFloat(tree.longitude);
@@ -110,13 +108,13 @@ const TreePoints = {
 
             const entity = viewer.entities.add({
                 name: `tree_${species}`,
-                position: Cesium.Cartesian3.fromDegrees(lng, lat, groundH),
+                position: Cesium.Cartesian3.fromDegrees(lng, lat, 0),
                 point: {
                     pixelSize: 8,
                     color: color,
                     outlineColor: Cesium.Color.WHITE.withAlpha(0.7),
                     outlineWidth: 1,
-                    heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+                    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
                     disableDepthTestDistance: Number.POSITIVE_INFINITY,
                     distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 800)
                 },
