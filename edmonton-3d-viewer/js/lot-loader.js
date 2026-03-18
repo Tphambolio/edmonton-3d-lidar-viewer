@@ -16,6 +16,7 @@ const LotLoader = {
     _selectedEntity: null,
     _selectedEntities: [],    // multi-lot highlight entities
     _setbackEntities: [],
+    _setbackDistanceEntities: [],
     _enabled: false,
     _lots: [],        // fallback only
     _entities: [],    // fallback only
@@ -337,6 +338,144 @@ const LotLoader = {
             this._viewer.entities.remove(e);
         }
         this._setbackEntities = [];
+        this.clearSetbackDistances();
+    },
+
+    /**
+     * Show measured distances from building edges to lot boundary edges.
+     * @param {Array} buildingPoints — [{lat, lng}, ...] footprint vertices
+     */
+    updateSetbackDistances(buildingPoints) {
+        this.clearSetbackDistances();
+        if (!buildingPoints || buildingPoints.length < 3) return;
+        if (!this._selectedParcels.length) return;
+
+        const lotGeom = BuildingTool._lotGeometry;
+        if (!lotGeom) return;
+
+        const refLat = lotGeom._refLat, refLng = lotGeom._refLng;
+        const mLat = lotGeom._mPerDegLat, mLng = lotGeom._mPerDegLng;
+        const fd = lotGeom._frontDir;   // frontage (width) direction
+        const sd = lotGeom._sideDir;    // depth direction (front→rear)
+        const fm = lotGeom._frontMid;   // front edge midpoint (local metres)
+        const rm = lotGeom._rearMid;    // rear edge midpoint (local metres)
+        const halfF = lotGeom._halfFront;
+        const halfD = lotGeom._halfDepth;
+
+        // Building points in local metre coords
+        const bPts = buildingPoints.map(p => ({
+            x: (p.lng - refLng) * mLng,
+            y: (p.lat - refLat) * mLat
+        }));
+
+        // Inward normal from front = direction from front midpoint to rear midpoint
+        const frDx = rm.x - fm.x, frDy = rm.y - fm.y;
+        const frLen = Math.sqrt(frDx * frDx + frDy * frDy) || 1;
+        const inF = { x: frDx / frLen, y: frDy / frLen };  // front → rear (inward from front)
+
+        // 4 lot edges with their inward normals and required setbacks
+        const edges = [
+            { name: 'Front', setback: this.FRONT_SETBACK,
+              p1: { x: fm.x - fd.x * halfF, y: fm.y - fd.y * halfF },
+              p2: { x: fm.x + fd.x * halfF, y: fm.y + fd.y * halfF },
+              normal: inF },
+            { name: 'Rear', setback: this.REAR_SETBACK,
+              p1: { x: rm.x - fd.x * halfF, y: rm.y - fd.y * halfF },
+              p2: { x: rm.x + fd.x * halfF, y: rm.y + fd.y * halfF },
+              normal: { x: -inF.x, y: -inF.y } },
+            { name: 'Left', setback: this.SIDE_SETBACK,
+              p1: { x: fm.x - fd.x * halfF, y: fm.y - fd.y * halfF },
+              p2: { x: rm.x - fd.x * halfF, y: rm.y - fd.y * halfF },
+              normal: { x: fd.x, y: fd.y } },
+            { name: 'Right', setback: this.SIDE_SETBACK,
+              p1: { x: fm.x + fd.x * halfF, y: fm.y + fd.y * halfF },
+              p2: { x: rm.x + fd.x * halfF, y: rm.y + fd.y * halfF },
+              normal: { x: -fd.x, y: -fd.y } }
+        ];
+
+        const groundH = (Buildings?._terrainHeight || 0) + 0.5;
+
+        for (const edge of edges) {
+            // Find the two building vertices closest to this lot edge
+            // (smallest signed distance along the inward normal from the edge)
+            const dists = bPts.map((bp, i) => ({
+                i, bp,
+                d: (bp.x - edge.p1.x) * edge.normal.x + (bp.y - edge.p1.y) * edge.normal.y
+            })).sort((a, b) => a.d - b.d);
+
+            // Building face midpoint = average of the two closest vertices
+            const face1 = dists[0].bp, face2 = dists[1].bp;
+            const faceMid = { x: (face1.x + face2.x) / 2, y: (face1.y + face2.y) / 2 };
+
+            // Project face midpoint perpendicularly onto the lot edge line
+            const t = this._projectOntoLine(faceMid, edge.p1, edge.p2);
+            const proj = {
+                x: edge.p1.x + t * (edge.p2.x - edge.p1.x),
+                y: edge.p1.y + t * (edge.p2.y - edge.p1.y)
+            };
+
+            const dx = faceMid.x - proj.x, dy = faceMid.y - proj.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const meetsSetback = distance >= edge.setback - 0.1;  // 10cm tolerance
+
+            const color = meetsSetback
+                ? Cesium.Color.LIME
+                : Cesium.Color.fromCssColorString('#FF6B35');
+
+            // Convert back to lat/lng
+            const fLL = { lat: refLat + faceMid.y / mLat, lng: refLng + faceMid.x / mLng };
+            const pLL = { lat: refLat + proj.y / mLat, lng: refLng + proj.x / mLng };
+
+            // Dashed distance line
+            this._setbackDistanceEntities.push(this._viewer.entities.add({
+                name: 'setback_dist_line',
+                polyline: {
+                    positions: [
+                        Cesium.Cartesian3.fromDegrees(fLL.lng, fLL.lat, groundH),
+                        Cesium.Cartesian3.fromDegrees(pLL.lng, pLL.lat, groundH)
+                    ],
+                    width: 2,
+                    material: new Cesium.PolylineDashMaterialProperty({
+                        color: color.withAlpha(0.9),
+                        dashLength: 8
+                    })
+                }
+            }));
+
+            // Distance label
+            const midLat = (fLL.lat + pLL.lat) / 2;
+            const midLng = (fLL.lng + pLL.lng) / 2;
+            this._setbackDistanceEntities.push(this._viewer.entities.add({
+                name: 'setback_dist_label',
+                position: Cesium.Cartesian3.fromDegrees(midLng, midLat, groundH),
+                label: {
+                    text: distance.toFixed(1) + 'm',
+                    font: 'bold 13px sans-serif',
+                    fillColor: color,
+                    outlineColor: Cesium.Color.BLACK,
+                    outlineWidth: 3,
+                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                    pixelOffset: new Cesium.Cartesian2(0, -12),
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                }
+            }));
+        }
+    },
+
+    clearSetbackDistances() {
+        for (const e of this._setbackDistanceEntities) {
+            this._viewer.entities.remove(e);
+        }
+        this._setbackDistanceEntities = [];
+    },
+
+    _projectOntoLine(pt, a, b) {
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq < 1e-10) return 0;
+        return Math.max(0, Math.min(1,
+            ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / lenSq
+        ));
     },
 
     /**

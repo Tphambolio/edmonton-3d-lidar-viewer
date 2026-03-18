@@ -763,6 +763,88 @@ const BuildingTool = {
         }
     },
 
+    /**
+     * Shift the entire footprint by a lat/lng delta (for arrow key / drag movement).
+     */
+    nudgeFootprint(dLat, dLng) {
+        if (this._points.length < 3) return;
+        for (const p of this._points) {
+            p.lat += dLat;
+            p.lng += dLng;
+            p.cartesian = Cesium.Cartesian3.fromDegrees(p.lng, p.lat);
+        }
+        for (let i = 0; i < this._pointEntities.length; i++) {
+            if (this._points[i]) {
+                this._pointEntities[i].position = this._points[i].cartesian;
+            }
+        }
+        this._updatePreview();
+        this._updateMeasurements();
+        this._fireUpdate();
+    },
+
+    /**
+     * Enable mouse drag to move the footprint during configuring mode.
+     */
+    activateDragMode() {
+        if (this._moveHandler) return;
+        const viewer = this._viewer;
+        const canvas = viewer.scene.canvas;
+        let isDragging = false;
+        let lastLat = 0, lastLng = 0;
+        const self = this;
+
+        this._moveHandler = new Cesium.ScreenSpaceEventHandler(canvas);
+
+        this._moveHandler.setInputAction(function(click) {
+            if (self.mode !== 'configuring') return;
+            const picked = viewer.scene.pick(click.position);
+            if (!picked || !picked.id) return;
+            const name = picked.id.name || '';
+            if (name !== 'buildtool_preview_poly' && name !== 'buildtool_preview_line') return;
+            const ray = viewer.camera.getPickRay(click.position);
+            const cartesian = viewer.scene.globe.pick(ray, viewer.scene);
+            if (!cartesian) return;
+            const carto = Cesium.Cartographic.fromCartesian(cartesian);
+            lastLat = Cesium.Math.toDegrees(carto.latitude);
+            lastLng = Cesium.Math.toDegrees(carto.longitude);
+            isDragging = true;
+            canvas.style.cursor = 'move';
+            viewer.scene.screenSpaceCameraController.enableInputs = false;
+        }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
+
+        this._moveHandler.setInputAction(function(movement) {
+            if (!isDragging) return;
+            const ray = viewer.camera.getPickRay(movement.endPosition);
+            const cartesian = viewer.scene.globe.pick(ray, viewer.scene);
+            if (!cartesian) return;
+            const carto = Cesium.Cartographic.fromCartesian(cartesian);
+            const lat = Cesium.Math.toDegrees(carto.latitude);
+            const lng = Cesium.Math.toDegrees(carto.longitude);
+            self.nudgeFootprint(lat - lastLat, lng - lastLng);
+            lastLat = lat;
+            lastLng = lng;
+        }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+        this._moveHandler.setInputAction(function() {
+            if (isDragging) {
+                isDragging = false;
+                canvas.style.cursor = '';
+                viewer.scene.screenSpaceCameraController.enableInputs = true;
+                if (typeof LotLoader !== 'undefined' && self.hasLot()) {
+                    LotLoader.updateSetbackDistances(self._points);
+                }
+            }
+        }, Cesium.ScreenSpaceEventType.LEFT_UP);
+    },
+
+    deactivateDragMode() {
+        if (this._moveHandler) {
+            this._moveHandler.destroy();
+            this._moveHandler = null;
+        }
+    },
+
     undoPoint() {
         if (this._points.length === 0) return;
         this._points.pop();
@@ -787,6 +869,7 @@ const BuildingTool = {
         this._mousePosition = null;
         this._updatePreview();
         this._updateMeasurements();
+        this.activateDragMode();
         this._fireUpdate();
     },
 
@@ -910,6 +993,7 @@ const BuildingTool = {
 
         this.buildings.push(building);
 
+        this.deactivateDragMode();
         this._clearPreview();
         this._clearPoints();
         this._clearLabels();
@@ -970,6 +1054,7 @@ const BuildingTool = {
             this._editHandler.destroy();
             this._editHandler = null;
         }
+        this.deactivateDragMode();
         this._clearPreview();
         this._clearPoints();
         this._clearLabels();
@@ -980,6 +1065,7 @@ const BuildingTool = {
     },
 
     resetFootprint() {
+        this.deactivateDragMode();
         this._clearPreview();
         this._clearPoints();
         this._clearLabels();
@@ -1067,6 +1153,7 @@ const BuildingTool = {
         this.mode = 'configuring';
         this._updatePreview();
         this._updateMeasurements();
+        this.activateDragMode();
         this._fireUpdate();
         return true;
     },
@@ -1295,6 +1382,7 @@ const BuildingTool = {
         this.mode = 'configuring';
         this._updatePreview();
         this._updateMeasurements();
+        this.activateDragMode();
         this._fireUpdate();
         return { ok: true, template: templateName, exceedsSetbacks };
     },

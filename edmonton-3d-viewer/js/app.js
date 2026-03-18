@@ -1803,6 +1803,7 @@ function renderTemplateList() {
             if (BuildingTool.hasLot()) {
                 const result = BuildingTool.autoPlaceTemplate(name);
                 if (result.ok) {
+                    LotLoader.updateSetbackDistances(BuildingTool._points);
                     if (result.exceedsSetbacks) {
                         setStatus(`Placed ${name} (exceeds setbacks)`);
                     } else {
@@ -2057,12 +2058,89 @@ async function nudgeBuilding(building, dLat, dLng) {
     }
 }
 
+// Mouse drag handler for moving existing custom buildings
+(function setupBuildingDrag() {
+    const canvas = viewer.scene.canvas;
+    const dragHandler = new Cesium.ScreenSpaceEventHandler(canvas);
+    let dragBuilding = null;
+    let dragLastLat = 0, dragLastLng = 0;
+    let dragStartPos = null;
+    let dragActive = false;
+
+    dragHandler.setInputAction(function(click) {
+        if (BuildingTool.mode !== 'idle') return;
+        const picked = viewer.scene.pick(click.position);
+        if (!picked || !picked.id) return;
+
+        const name = picked.id.name || '';
+        let building = null;
+        if (name.startsWith('custom_build_')) {
+            building = BuildingTool.buildings.find(b => b.entity === picked.id);
+        }
+        if (!building) {
+            building = BuildingTool.buildings.find(b => b.modelEntity === picked.id);
+        }
+        if (!building) return;
+
+        dragStartPos = Cesium.Cartesian2.clone(click.position);
+        dragBuilding = building;
+        dragActive = false;
+
+        const ray = viewer.camera.getPickRay(click.position);
+        const cartesian = viewer.scene.globe.pick(ray, viewer.scene);
+        if (cartesian) {
+            const carto = Cesium.Cartographic.fromCartesian(cartesian);
+            dragLastLat = Cesium.Math.toDegrees(carto.latitude);
+            dragLastLng = Cesium.Math.toDegrees(carto.longitude);
+        }
+    }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
+
+    dragHandler.setInputAction(function(movement) {
+        if (!dragBuilding) return;
+
+        // 5px threshold before activating drag
+        if (!dragActive) {
+            const dx = movement.endPosition.x - dragStartPos.x;
+            const dy = movement.endPosition.y - dragStartPos.y;
+            if (dx * dx + dy * dy < 25) return;
+            dragActive = true;
+            canvas.style.cursor = 'move';
+            viewer.scene.screenSpaceCameraController.enableInputs = false;
+        }
+
+        const ray = viewer.camera.getPickRay(movement.endPosition);
+        const cartesian = viewer.scene.globe.pick(ray, viewer.scene);
+        if (!cartesian) return;
+        const carto = Cesium.Cartographic.fromCartesian(cartesian);
+        const lat = Cesium.Math.toDegrees(carto.latitude);
+        const lng = Cesium.Math.toDegrees(carto.longitude);
+        nudgeBuilding(dragBuilding, lat - dragLastLat, lng - dragLastLng);
+        dragLastLat = lat;
+        dragLastLng = lng;
+    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+    dragHandler.setInputAction(function() {
+        if (dragBuilding && dragActive) {
+            canvas.style.cursor = '';
+            viewer.scene.screenSpaceCameraController.enableInputs = true;
+            if (BuildingTool.hasLot()) {
+                LotLoader.updateSetbackDistances(dragBuilding.footprint);
+            }
+        }
+        dragBuilding = null;
+        dragActive = false;
+        dragStartPos = null;
+    }, Cesium.ScreenSpaceEventType.LEFT_UP);
+})();
+
 // Arrow key handler for nudging buildings in edit mode
 document.addEventListener('keydown', (e) => {
-    if (!window._editingBuildingId || !selectedCustomBuilding) return;
-
     // Don't intercept if user is typing in an input
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+
+    const isEditing = window._editingBuildingId && selectedCustomBuilding;
+    const isConfiguring = BuildingTool.mode === 'configuring';
+    if (!isEditing && !isConfiguring) return;
 
     const step = e.shiftKey ? 0.00005 : 0.00001; // ~5.5m or ~1.1m
     let dLat = 0, dLng = 0;
@@ -2076,7 +2154,13 @@ document.addEventListener('keydown', (e) => {
     }
 
     e.preventDefault();
-    nudgeBuilding(selectedCustomBuilding, dLat, dLng);
+    if (isEditing) {
+        nudgeBuilding(selectedCustomBuilding, dLat, dLng);
+        if (BuildingTool.hasLot()) LotLoader.updateSetbackDistances(selectedCustomBuilding.footprint);
+    } else {
+        BuildingTool.nudgeFootprint(dLat, dLng);
+        if (BuildingTool.hasLot()) LotLoader.updateSetbackDistances(BuildingTool._points);
+    }
 });
 
 function copySelectedCustomBuilding() {
