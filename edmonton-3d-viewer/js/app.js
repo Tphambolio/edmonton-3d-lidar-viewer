@@ -323,16 +323,20 @@ function setupUI() {
 
         // Check for tree inventory point by geographic proximity
         let treePointClicked = false;
-        if (clickLat !== null) {
+        if (clickLat !== null && TreePoints._visible) {
+            console.log(`Tree click check: lat=${clickLat.toFixed(6)}, lng=${clickLng.toFixed(6)}, trees=${TreePoints._treeData.length}`);
             const nearestTree = TreePoints.findNearestGeo(clickLat, clickLng);
             if (nearestTree) {
                 const info = TreePoints.getTreeInfo(nearestTree);
+                console.log('Tree found:', info?.species);
                 if (info) {
                     selectBuilding(null);
                     selectCustomBuilding(null);
                     showTreePointInfo(info);
                     treePointClicked = true;
                 }
+            } else {
+                console.log('No tree within 12m of click');
             }
         }
 

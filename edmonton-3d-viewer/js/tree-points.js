@@ -178,7 +178,7 @@ const TreePoints = {
      * Find the nearest tree point to a geographic location (lat/lng).
      * Returns entity if within maxMetres, null otherwise.
      */
-    findNearestGeo(lat, lng, maxMetres = 5) {
+    findNearestGeo(lat, lng, maxMetres = 12) {
         if (!this._visible || !this._treeData.length) return null;
         // Approximate metres per degree at Edmonton's latitude
         const mPerDegLat = 111320;
