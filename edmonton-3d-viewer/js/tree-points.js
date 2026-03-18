@@ -179,7 +179,7 @@ const TreePoints = {
      * Projects each tree to screen coords using terrain height,
      * then finds the closest one within maxPixels of the click.
      */
-    findNearestScreen(clickX, clickY, maxPixels = 20) {
+    findNearestScreen(clickX, clickY, maxPixels = 40) {
         if (!this._visible || !this._treeData.length) return null;
         const scene = this._viewer.scene;
         const globe = scene.globe;
