@@ -348,7 +348,6 @@ const LotLoader = {
     updateSetbackDistances(buildingPoints) {
         this.clearSetbackDistances();
         if (!buildingPoints || buildingPoints.length < 3) return;
-        if (!this._selectedParcels.length) return;
 
         const lotGeom = BuildingTool._lotGeometry;
         if (!lotGeom) return;
