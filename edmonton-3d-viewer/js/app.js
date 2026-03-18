@@ -241,6 +241,7 @@ async function init() {
     BuildingTool.init(viewer);
     LotLoader.init(viewer);
     TreePoints.init(viewer);
+    setupBuildingDrag();
 
     // Wire up UI
     setupUI();
@@ -2059,7 +2060,7 @@ async function nudgeBuilding(building, dLat, dLng) {
 }
 
 // Mouse drag handler for moving existing custom buildings
-(function setupBuildingDrag() {
+function setupBuildingDrag() {
     const canvas = viewer.scene.canvas;
     const dragHandler = new Cesium.ScreenSpaceEventHandler(canvas);
     let dragBuilding = null;
@@ -2131,7 +2132,7 @@ async function nudgeBuilding(building, dLat, dLng) {
         dragActive = false;
         dragStartPos = null;
     }, Cesium.ScreenSpaceEventType.LEFT_UP);
-})();
+}
 
 // Arrow key handler for nudging buildings in edit mode
 document.addEventListener('keydown', (e) => {
