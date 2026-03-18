@@ -175,24 +175,30 @@ const TreePoints = {
     },
 
     /**
-     * Find the nearest tree point to a geographic location (lat/lng).
-     * Returns entity if within maxMetres, null otherwise.
+     * Find the nearest tree point to a screen click position.
+     * Projects each tree to screen coords using terrain height,
+     * then finds the closest one within maxPixels of the click.
      */
-    findNearestGeo(lat, lng, maxMetres = 12) {
+    findNearestScreen(clickX, clickY, maxPixels = 20) {
         if (!this._visible || !this._treeData.length) return null;
-        // Approximate metres per degree at Edmonton's latitude
-        const mPerDegLat = 111320;
-        const mPerDegLng = 111320 * Math.cos(lat * Math.PI / 180);
+        const scene = this._viewer.scene;
+        const globe = scene.globe;
         let bestIdx = -1;
-        let bestDist = maxMetres * maxMetres;
+        let bestDist = maxPixels * maxPixels;
         for (let i = 0; i < this._treeData.length; i++) {
             const tree = this._treeData[i];
             const tLat = parseFloat(tree.latitude);
             const tLng = parseFloat(tree.longitude);
             if (isNaN(tLat) || isNaN(tLng)) continue;
-            const dLatM = (tLat - lat) * mPerDegLat;
-            const dLngM = (tLng - lng) * mPerDegLng;
-            const d2 = dLatM * dLatM + dLngM * dLngM;
+            const carto = Cesium.Cartographic.fromDegrees(tLng, tLat);
+            const h = globe.getHeight(carto);
+            if (h === undefined) continue;
+            const cart3 = Cesium.Cartesian3.fromDegrees(tLng, tLat, h);
+            const screenPos = Cesium.SceneTransforms.worldToWindowCoordinates(scene, cart3);
+            if (!screenPos) continue;
+            const dx = screenPos.x - clickX;
+            const dy = screenPos.y - clickY;
+            const d2 = dx * dx + dy * dy;
             if (d2 < bestDist) {
                 bestDist = d2;
                 bestIdx = i;
