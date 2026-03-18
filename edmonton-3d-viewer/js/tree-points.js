@@ -175,29 +175,31 @@ const TreePoints = {
     },
 
     /**
-     * Find the nearest tree point entity to a screen click position.
-     * Returns entity if within pixelRadius, null otherwise.
+     * Find the nearest tree point to a geographic location (lat/lng).
+     * Returns entity if within maxMetres, null otherwise.
      */
-    findNearestAt(screenPosition, pixelRadius = 12) {
-        if (!this._visible || !this._entities.length) return null;
-        const now = Cesium.JulianDate.now();
-        let best = null;
-        let bestDist = pixelRadius * pixelRadius;
-        for (const entity of this._entities) {
-            if (!entity.show) continue;
-            const pos = entity.position.getValue(now);
-            if (!pos) continue;
-            const sp = Cesium.SceneTransforms.wgs84ToWindowCoordinates(this._viewer.scene, pos);
-            if (!sp) continue;
-            const dx = sp.x - screenPosition.x;
-            const dy = sp.y - screenPosition.y;
-            const d2 = dx * dx + dy * dy;
+    findNearestGeo(lat, lng, maxMetres = 5) {
+        if (!this._visible || !this._treeData.length) return null;
+        // Approximate metres per degree at Edmonton's latitude
+        const mPerDegLat = 111320;
+        const mPerDegLng = 111320 * Math.cos(lat * Math.PI / 180);
+        let bestIdx = -1;
+        let bestDist = maxMetres * maxMetres;
+        for (let i = 0; i < this._treeData.length; i++) {
+            const tree = this._treeData[i];
+            const tLat = parseFloat(tree.latitude);
+            const tLng = parseFloat(tree.longitude);
+            if (isNaN(tLat) || isNaN(tLng)) continue;
+            const dLatM = (tLat - lat) * mPerDegLat;
+            const dLngM = (tLng - lng) * mPerDegLng;
+            const d2 = dLatM * dLatM + dLngM * dLngM;
             if (d2 < bestDist) {
                 bestDist = d2;
-                best = entity;
+                bestIdx = i;
             }
         }
-        return best;
+        if (bestIdx < 0) return null;
+        return this._entities[bestIdx] || null;
     },
 
     _clearEntities() {

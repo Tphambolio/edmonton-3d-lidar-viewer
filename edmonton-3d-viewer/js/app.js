@@ -310,18 +310,29 @@ function setupUI() {
         if (BuildingTool.mode === 'drawing') return;
 
         const picked = viewer.scene.pick(click.position);
-        console.log('Picked:', picked);
 
-        // Check for tree inventory point by screen proximity (Cesium pick misses ground-clamped points)
+        // Convert click to lat/lng for geographic proximity checks
+        const clickRay = viewer.camera.getPickRay(click.position);
+        const clickCartesian = viewer.scene.globe.pick(clickRay, viewer.scene);
+        let clickLat = null, clickLng = null;
+        if (clickCartesian) {
+            const clickCarto = Cesium.Cartographic.fromCartesian(clickCartesian);
+            clickLat = Cesium.Math.toDegrees(clickCarto.latitude);
+            clickLng = Cesium.Math.toDegrees(clickCarto.longitude);
+        }
+
+        // Check for tree inventory point by geographic proximity
         let treePointClicked = false;
-        const nearestTree = TreePoints.findNearestAt(click.position);
-        if (nearestTree) {
-            const info = TreePoints.getTreeInfo(nearestTree);
-            if (info) {
-                selectBuilding(null);
-                selectCustomBuilding(null);
-                showTreePointInfo(info);
-                treePointClicked = true;
+        if (clickLat !== null) {
+            const nearestTree = TreePoints.findNearestGeo(clickLat, clickLng);
+            if (nearestTree) {
+                const info = TreePoints.getTreeInfo(nearestTree);
+                if (info) {
+                    selectBuilding(null);
+                    selectCustomBuilding(null);
+                    showTreePointInfo(info);
+                    treePointClicked = true;
+                }
             }
         }
 
