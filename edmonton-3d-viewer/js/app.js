@@ -2070,16 +2070,20 @@ function setupBuildingDrag() {
 
     dragHandler.setInputAction(function(click) {
         if (BuildingTool.mode !== 'idle') return;
-        const picked = viewer.scene.pick(click.position);
-        if (!picked || !picked.id) return;
-
-        const name = picked.id.name || '';
+        // Use drillPick to find custom buildings behind OSM buildings/labels
+        const picks = viewer.scene.drillPick(click.position, 10);
         let building = null;
-        if (name.startsWith('custom_build_')) {
-            building = BuildingTool.buildings.find(b => b.entity === picked.id);
-        }
-        if (!building) {
-            building = BuildingTool.buildings.find(b => b.modelEntity === picked.id);
+        for (const picked of picks) {
+            if (!picked || !picked.id) continue;
+            const name = picked.id.name || '';
+            if (name.startsWith('custom_build_')) {
+                building = BuildingTool.buildings.find(b => b.entity === picked.id);
+                if (building) break;
+            }
+            if (!building) {
+                building = BuildingTool.buildings.find(b => b.modelEntity === picked.id);
+                if (building) break;
+            }
         }
         if (!building) return;
 
